@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 1: Mind Stone</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .quiz-container {
+            max-width: 800px;
+            margin: 4rem auto;
+            position: relative;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.5);
+            border-bottom: 2px solid var(--accent-avengers);
+            font-family: 'Orbitron';
+        }
+
+        .timer-box {
+            font-size: 2rem;
+            color: var(--accent-avengers);
+            text-shadow: 0 0 10px var(--accent-avengers);
+        }
+
+        .progress-track {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            z-index: 100;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--accent-avengers);
+            box-shadow: 0 0 10px var(--accent-avengers);
+            transition: width 0.3s ease;
+        }
+
+        /* Question Styles */
+        .question-text {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            min-height: 60px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .option-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1.5rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            /* Force pointer for options */
+        }
+
+        .option-card:hover {
+            border-color: var(--accent-avengers);
+            background: rgba(196, 30, 58, 0.1);
+        }
+
+        .option-card.selected {
+            background: rgba(196, 30, 58, 0.2);
+            border-color: var(--accent-avengers);
+            box-shadow: 0 0 15px rgba(196, 30, 58, 0.4);
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 2rem;
+        }
+
+        /* Modal Customization for Result */
+        .result-content {
+            background: var(--bg-darker);
+            padding: 3rem;
+            border: 2px solid var(--accent-avengers);
+            text-align: center;
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(196, 30, 58, 0.3);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        #loading-overlay {
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--accent-avengers);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="progress-track">
+        <div class="progress-fill" id="progress-bar"></div>
+    </div>
+
+    <div class="container quiz-container">
+        <div class="hud-top glass-card">
+            <div>PHASE 1: MIND STONE</div>
+            <div id="timer-display" class="timer-box">05:00</div>
+        </div>
+
+        <div id="quiz-container" class="glass-card">
+            <div id="question-box">
+                <p style="text-align: center; padding: 2rem; color: var(--text-secondary);">Loading questions...</p>
+            </div>
+
+            <div class="controls">
+                <button id="prev-btn" class="btn-cyber interactive" onclick="prevQuestion()"
+                    style="border-color: #555;">PREV</button>
+                <button id="next-btn" class="btn-cyber interactive" onclick="nextQuestion()">NEXT</button>
+                <button id="finish-btn" class="btn-cyber interactive" onclick="submitQuiz()"
+                    style="display:none; border-color: var(--accent-avengers); color: var(--accent-avengers);">SUBMIT</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Result Modal -->
+    <div id="result-modal" class="modal-overlay">
+        <div class="result-content animate-on-scroll">
+            <h2 id="result-title" class="cinematic-title" style="color: var(--accent-avengers);"></h2>
+            <p id="result-msg" style="margin: 2rem 0; font-size: 1.2rem;"></p>
+            <div id="action-area"></div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="modal-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script src="../static/js/quiz.js"></script>
+</body>
+
+</html>

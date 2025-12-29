@@ -1,0 +1,221 @@
+/* Google Fonts Import */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap');
+
+:root {
+    --bg-color: #0a0000;
+    --bg-darker: #050000;
+    --text-primary: #ffffff;
+    --text-secondary: #ffaaaa;
+    
+    --accent-avengers: #C41E3A; /* Avengers Red */
+    --accent-red-dark: #8B0000; /* Dark Red */
+    --accent-red-bright: #FF1744; /* Bright Red */
+    --accent-red-glow: #FF4444; /* Glowing Red */
+    
+    --glass-bg: rgba(196, 30, 58, 0.1);
+    --glass-border: rgba(196, 30, 58, 0.3);
+    --glass-blur: 15px;
+    
+    --neon-glow-red: 0 0 10px var(--accent-avengers), 0 0 20px var(--accent-avengers), 0 0 30px var(--accent-avengers);
+    --neon-glow-red-strong: 0 0 20px var(--accent-avengers), 0 0 40px var(--accent-avengers), 0 0 60px var(--accent-red-bright);
+    
+    --cursor-size: 30px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: none; /* Custom cursor everywhere */
+}
+
+body {
+    background-color: var(--bg-color);
+    background-image: 
+        radial-gradient(circle at 10% 20%, rgba(196, 30, 58, 0.25) 0%, transparent 30%),
+        radial-gradient(circle at 90% 80%, rgba(139, 0, 0, 0.25) 0%, transparent 30%),
+        radial-gradient(circle at 50% 50%, rgba(255, 23, 68, 0.1) 0%, transparent 50%);
+    color: var(--text-primary);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    font-size: 16px;
+}
+
+/* Custom Cursor */
+.cursor-dot,
+.cursor-outline {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+.cursor-dot {
+    width: 6px;
+    height: 6px;
+    background-color: white;
+}
+
+.cursor-outline {
+    width: var(--cursor-size);
+    height: var(--cursor-size);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    transition: width 0.2s, height 0.2s, background-color 0.2s;
+}
+
+/* Hover effects for cursor */
+body.hovering .cursor-outline {
+    width: 50px;
+    height: 50px;
+    background-color: rgba(196, 30, 58, 0.2);
+    border-color: var(--accent-avengers);
+    box-shadow: 0 0 15px var(--accent-avengers);
+}
+
+/* Typography */
+h1, h2, h3, .cinematic-title {
+    font-family: 'Orbitron', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+/* Layout Utilities */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    position: relative;
+    z-index: 10;
+}
+
+.center-screen {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    text-align: center;
+}
+
+/* Glassmorphism Card */
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.glass-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Buttons */
+.btn-cyber {
+    display: inline-block;
+    padding: 1rem 2.5rem;
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    background: transparent;
+    border: 2px solid var(--accent-avengers);
+    border-radius: 4px; /* Slightly angular */
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 5px var(--accent-avengers);
+    box-shadow: 0 0 10px rgba(196, 30, 58, 0.5);
+}
+
+.btn-cyber::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(196, 30, 58, 0.6), transparent);
+    transition: left 0.5s;
+}
+
+.btn-cyber:hover {
+    background: rgba(196, 30, 58, 0.2);
+    box-shadow: 0 0 25px rgba(196, 30, 58, 0.8), 0 0 50px rgba(255, 23, 68, 0.4);
+    transform: scale(1.05);
+    border-color: var(--accent-red-bright);
+}
+
+.btn-cyber:hover::before {
+    left: 100%;
+}
+
+.btn-locked {
+    border-color: #555;
+    color: #555;
+    text-shadow: none;
+    box-shadow: none;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+/* Anti-Gravity Animation */
+@keyframes float {
+    0% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(2deg); }
+    100% { transform: translateY(0px) rotate(0deg); }
+}
+
+.floating {
+    animation: float 6s ease-in-out infinite;
+}
+
+/* Utility Animations */
+.fade-in {
+    opacity: 0;
+    animation: fadeInUp 1s ease forwards;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}

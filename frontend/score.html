@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Final Score | CodeVerse</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .score-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 2rem;
+            background: radial-gradient(circle at center, rgba(196, 30, 58, 0.3) 0%, rgba(0, 0, 0, 1) 80%);
+        }
+
+        .score-card {
+            max-width: 800px;
+            width: 100%;
+            margin-bottom: 2rem;
+        }
+
+        .phase-score {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            margin: 1rem 0;
+            background: rgba(196, 30, 58, 0.1);
+            border: 1px solid rgba(196, 30, 58, 0.3);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .phase-score:hover {
+            background: rgba(196, 30, 58, 0.2);
+            border-color: var(--accent-avengers);
+            transform: translateX(5px);
+        }
+
+        .phase-name {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            color: var(--text-primary);
+        }
+
+        .phase-points {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            color: var(--accent-avengers);
+            text-shadow: 0 0 10px var(--accent-avengers);
+        }
+
+        .total-score {
+            margin-top: 3rem;
+            padding: 2rem;
+            background: rgba(196, 30, 58, 0.15);
+            border: 2px solid var(--accent-avengers);
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(196, 30, 58, 0.5);
+        }
+
+        .total-score h2 {
+            font-size: 2.5rem;
+            color: var(--accent-avengers);
+            text-shadow: var(--neon-glow-red-strong);
+            margin-bottom: 1rem;
+        }
+
+        .total-points {
+            font-size: 3rem;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-red-bright);
+            text-shadow: 0 0 20px var(--accent-red-bright);
+            margin: 1rem 0;
+        }
+
+        .percentage {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            margin-top: 1rem;
+        }
+
+        .avengers-badge {
+            font-size: 5rem;
+            margin: 2rem 0;
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                filter: drop-shadow(0 0 20px var(--accent-avengers));
+            }
+            50% {
+                transform: scale(1.1);
+                filter: drop-shadow(0 0 40px var(--accent-red-bright));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="score-container">
+        <div class="avengers-badge">🛡️</div>
+        <h1 class="cinematic-title animate-on-scroll" style="color: var(--accent-avengers); text-shadow: var(--neon-glow-red-strong);">
+            MISSION COMPLETE
+        </h1>
+        
+        <div class="glass-card score-card animate-on-scroll">
+            <h2 style="margin-bottom: 2rem; color: var(--accent-avengers);">PHASE SCORES</h2>
+            
+            <div class="phase-score">
+                <span class="phase-name">Phase 1: Quiz Challenge</span>
+                <span class="phase-points" id="phase1-display">0/50</span>
+            </div>
+            
+            <div class="phase-score">
+                <span class="phase-name">Phase 2: DSA Challenge</span>
+                <span class="phase-points" id="phase2-display">0/50</span>
+            </div>
+            
+            <div class="phase-score">
+                <span class="phase-name">Phase 3: Final Challenge</span>
+                <span class="phase-points" id="phase3-display">0/100</span>
+            </div>
+        </div>
+
+        <div class="total-score animate-on-scroll">
+            <h2>OVERALL SCORE</h2>
+            <div class="total-points" id="total-display">0/200</div>
+            <div class="percentage" id="percentage-display">0%</div>
+        </div>
+
+        <div style="margin-top: 3rem;">
+            <a href="phases.html" class="btn-cyber interactive">RETURN TO PHASES</a>
+            <a href="index.html" class="btn-cyber interactive" style="margin-left: 1rem;">HOME</a>
+        </div>
+    </div>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script>
+        async function loadScores() {
+            try {
+                const response = await fetch('/api/get-total-score');
+                const data = await response.json();
+
+                // Update phase displays
+                document.getElementById('phase1-display').textContent = `${data.phase1_score}/${data.phase1_max}`;
+                document.getElementById('phase2-display').textContent = `${data.phase2_score}/${data.phase2_max}`;
+                document.getElementById('phase3-display').textContent = `${data.phase3_score}/${data.phase3_max}`;
+
+                // Update total
+                document.getElementById('total-display').textContent = `${data.total_score}/${data.total_max}`;
+                document.getElementById('percentage-display').textContent = `${data.percentage}% Complete`;
+
+                // Animate score counting
+                animateScore('total-display', data.total_score, data.total_max);
+            } catch (error) {
+                console.error('Failed to load scores:', error);
+                // Set defaults if API fails
+                document.getElementById('phase1-display').textContent = '0/50';
+                document.getElementById('phase2-display').textContent = '0/50';
+                document.getElementById('phase3-display').textContent = '0/100';
+                document.getElementById('total-display').textContent = '0/200';
+                document.getElementById('percentage-display').textContent = '0%';
+            }
+        }
+
+        function animateScore(elementId, target, max) {
+            const element = document.getElementById(elementId);
+            let current = 0;
+            const increment = target / 50;
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= target) {
+                    current = target;
+                    clearInterval(timer);
+                }
+                element.textContent = `${Math.floor(current)}/${max}`;
+            }, 30);
+        }
+
+        document.addEventListener('DOMContentLoaded', loadScores);
+    </script>
+</body>
+</html>
+

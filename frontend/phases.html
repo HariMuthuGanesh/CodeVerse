@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Phase | CodeVerse</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .phase-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            width: 100%;
+            margin-top: 3rem;
+        }
+
+        .phase-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            min-height: 400px;
+        }
+
+        .stone-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            filter: drop-shadow(0 0 10px currentColor);
+        }
+
+        .mind-stone { color: var(--accent-avengers); text-shadow: var(--neon-glow-red); }
+        .time-stone { color: var(--accent-red-bright); text-shadow: var(--neon-glow-red); }
+        .power-stone { color: var(--accent-avengers); text-shadow: var(--neon-glow-red-strong); }
+
+        .phase-title {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .phase-desc {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            flex-grow: 1;
+        }
+
+        /* lock overlay */
+        .locked::after {
+            content: "LOCKED";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 3rem;
+            font-family: 'Orbitron';
+            color: rgba(255,255,255,0.1);
+            font-weight: 900;
+            pointer-events: none;
+            border: 4px solid rgba(255,255,255,0.1);
+            padding: 1rem;
+            z-index: 1;
+        }
+        
+        .locked .phase-content {
+            opacity: 0.3;
+            filter: grayscale(1);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container center-screen">
+        <h2 class="cinematic-title animate-on-scroll">Mission Timeline</h2>
+        
+        <div class="phase-grid">
+            <!-- Phase 1 -->
+            <div id="phase-1-card" class="glass-card phase-card animate-on-scroll">
+                <div class="phase-content">
+                    <div class="stone-icon mind-stone floating">✦</div>
+                    <h3 class="phase-title">Phase 1: Mind Stone</h3>
+                    <p class="phase-desc">Prove your logic. Complete the quiz to synchronize with the Mind Stone.</p>
+                    <a href="quiz.html" class="btn-cyber phase-btn interactive">Enter Phase</a>
+                </div>
+            </div>
+
+            <!-- Phase 2 -->
+            <div id="phase-2-card" class="glass-card phase-card animate-on-scroll">
+                <div class="phase-content">
+                    <div class="stone-icon time-stone floating" style="animation-delay: -1s;">⏳</div>
+                    <h3 class="phase-title">Phase 2: Time Stone</h3>
+                    <p class="phase-desc">Master the timeline. Construct the Binary Tree of Time before entropy takes over.</p>
+                    <a href="dsa.html" class="btn-cyber phase-btn interactive">Enter Phase</a>
+                </div>
+            </div>
+
+            <!-- Phase 3 -->
+            <div id="phase-3-card" class="glass-card phase-card animate-on-scroll">
+                <div class="phase-content">
+                    <div class="stone-icon power-stone floating" style="animation-delay: -2s;">⚡</div>
+                    <h3 class="phase-title">Phase 3: Power Stone</h3>
+                    <p class="phase-desc">The final confrontation. Harness the full power of the CodeVerse.</p>
+                    <a href="final.html" class="btn-cyber phase-btn interactive">Enter Phase</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script src="../static/js/phase-control.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const status = await checkPhaseStatus();
+            updatePhaseUI(status);
+        });
+    </script>
+</body>
+</html>

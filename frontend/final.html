@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 3: The Endgame</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .final-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 2rem;
+            background: radial-gradient(circle at center, rgba(196, 30, 58, 0.4) 0%, rgba(0, 0, 0, 1) 90%);
+        }
+
+        .power-symbol {
+            font-size: 8rem;
+            color: var(--accent-avengers);
+            text-shadow: 0 0 50px var(--accent-avengers), 0 0 100px var(--accent-red-bright);
+            margin-bottom: 2rem;
+            animation: pulse 3s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                text-shadow: 0 0 30px var(--accent-avengers), 0 0 60px var(--accent-red-bright);
+                transform: scale(1);
+            }
+
+            50% {
+                text-shadow: 0 0 80px var(--accent-avengers), 0 0 120px var(--accent-red-bright), 0 0 20px white;
+                transform: scale(1.1);
+            }
+        }
+
+        /* Modal Overrides */
+        .power-modal {
+            border-color: var(--accent-avengers);
+            box-shadow: 0 0 50px var(--accent-avengers), 0 0 100px rgba(196, 30, 58, 0.5);
+            background: rgba(10, 10, 10, 0.95);
+        }
+
+        .timer-display {
+            font-size: 4rem;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-avengers);
+            text-shadow: 0 0 20px var(--accent-avengers);
+            margin: 2rem 0;
+            padding: 1rem 3rem;
+            background: rgba(196, 30, 58, 0.1);
+            border: 2px solid var(--accent-avengers);
+            border-radius: 12px;
+            letter-spacing: 4px;
+        }
+
+        .timer-display.warning {
+            color: var(--accent-red-bright);
+            text-shadow: 0 0 40px var(--accent-red-bright);
+            animation: pulse 0.5s infinite;
+            border-color: var(--accent-red-bright);
+        }
+
+        .challenge-active {
+            display: none;
+        }
+
+        .challenge-active.show {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .timeout-message {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .timeout-message.show {
+            display: flex;
+        }
+
+        .lock-icon {
+            font-size: 5rem;
+            color: var(--accent-red-bright);
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="final-container">
+        <!-- Initial State -->
+        <div id="initial-state">
+            <div class="power-symbol">⚡</div>
+            <h1 class="cinematic-title animate-on-scroll">THE FINAL WAR</h1>
+            <p style="font-size: 1.5rem; color: var(--text-secondary); margin-bottom: 3rem; max-width: 600px;">
+                You have gathered the infinity stones.<br>
+                One final challenge remains before the snap.
+            </p>
+
+            <button onclick="openStep1()" class="btn-cyber interactive"
+                style="border-color: var(--accent-avengers); color: white;">ENTER FINAL CHALLENGE</button>
+        </div>
+
+        <!-- Challenge Active State (with timer) -->
+        <div id="challenge-active" class="challenge-active">
+            <div class="power-symbol" style="font-size: 4rem;">⚡</div>
+            <h1 class="cinematic-title">FINAL BATTLE IN PROGRESS</h1>
+            <p style="font-size: 1.2rem; color: var(--text-secondary); margin-bottom: 2rem;">
+                The multiverse is at stake.<br>Complete the challenge on HackerRank.
+            </p>
+            <div class="timer-display" id="timer-display">30:00</div>
+
+            <div style="margin-top: 2rem;">
+                <p style="color: var(--text-secondary); margin-bottom: 1rem;">Closed the detailed view? Re-open it:</p>
+                <a href="https://www.hackerrank.com/codeverse-1766848205" target="_blank" class="btn-cyber interactive">
+                    OPEN HACKERRANK
+                </a>
+            </div>
+        </div>
+
+        <!-- Timeout / Expired Message -->
+        <div id="timeout-message" class="timeout-message">
+            <div class="lock-icon">⛔</div>
+            <h1 class="cinematic-title" style="color: var(--text-primary);">TIME'S UP</h1>
+            <p style="font-size: 1.5rem; color: var(--accent-red-bright); max-width: 600px; margin-bottom: 2rem;">
+                The final challenge window has closed.
+            </p>
+            <p style="color: var(--text-secondary);">
+                CodeVerse results will be announced soon.
+            </p>
+
+            <!-- Dev Reset for Testing -->
+            <button onclick="resetPhase3()"
+                style="margin-top: 3rem; background: none; border: 1px solid #333; color: #444; font-size: 0.8rem; cursor: pointer; padding: 5px 10px;">
+                [DEV] Reset Phase 3
+            </button>
+        </div>
+    </div>
+
+    <!-- Step 1: Ready Confirmation Modal -->
+    <div id="modal-step-1" class="modal-overlay">
+        <div class="glass-card power-modal animate-on-scroll" style="text-align: center; max-width: 600px;">
+            <h2 class="cinematic-title" style="color: var(--accent-avengers); font-size: 2.5rem;">⚠️ Final Challenge
+                Ahead</h2>
+            <div style="margin: 2rem 0; font-size: 1.2rem; line-height: 1.6; color: var(--text-primary);">
+                <p>You are about to enter the final round of CodeVerse.</p>
+                <p style="margin-top: 1rem;">Once you proceed, a <strong
+                        style="color: var(--accent-avengers);">30-minute timer</strong> will start.</p>
+                <p style="margin-top: 1rem; color: var(--accent-red-bright);">This round cannot be paused or restarted.
+                </p>
+            </div>
+            <div style="display: flex; gap: 1.5rem; justify-content: center; margin-top: 2rem;">
+                <button onclick="closeStep1()" class="btn-cyber interactive" style="border-color: #555;">❌ Not
+                    Now</button>
+                <button onclick="proceedToStep2()" class="btn-cyber interactive"
+                    style="border-color: var(--accent-avengers); background: rgba(0, 255, 0, 0.1);">✅ I'm Ready</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Endgame Engage Modal -->
+    <div id="modal-step-2" class="modal-overlay">
+        <div class="glass-card power-modal animate-on-scroll" style="text-align: center; max-width: 600px;">
+            <h2 class="cinematic-title" style="color: var(--accent-red-bright); font-size: 2.5rem;">🟥 The Endgame
+                Begins</h2>
+            <div style="margin: 2rem 0; font-size: 1.2rem; line-height: 1.6; color: var(--text-primary);">
+                <p>This is your final battle.</p>
+                <p style="margin-top: 1rem;">You will have <strong>30 minutes</strong> to complete the challenge on
+                    HackerRank.</p>
+                <p style="margin-top: 1rem; font-style: italic;">Once started, time will continue to run.</p>
+            </div>
+            <div style="display: flex; gap: 1.5rem; justify-content: center; margin-top: 2rem;">
+                <button onclick="closeStep2()" class="btn-cyber interactive" style="border-color: #555;">⬅️ Go
+                    Back</button>
+                <button onclick="engageEndgame()" class="btn-cyber interactive"
+                    style="background: rgba(196,30,58,0.4); border-color: var(--accent-red-bright);">🔥 Enter Final
+                    Challenge</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script src="../static/js/state-manager.js"></script>
+    <script>
+        // DOM Elements
+        const initialState = document.getElementById('initial-state');
+        const challengeActive = document.getElementById('challenge-active');
+        const timeoutMessage = document.getElementById('timeout-message');
+        const timerDisplay = document.getElementById('timer-display');
+
+        const modal1 = document.getElementById('modal-step-1');
+        const modal2 = document.getElementById('modal-step-2');
+
+        // Constants & Config
+        const HACKERRANK_URL = 'https://www.hackerrank.com/codeverse-1766848205';
+        const TIMER_DURATION_SEC = 30 * 60; // 30 minutes
+        let timerInterval = null;
+
+        // Keys
+        const KEY_STARTED = 'phase3_started';
+        const KEY_START_TIME = 'phase3_start_time';
+        const KEY_END_TIME = 'phase3_end_time';
+
+        // --- Flow Control ---
+
+        function openStep1() {
+            modal1.classList.add('active');
+        }
+
+        function closeStep1() {
+            modal1.classList.remove('active');
+        }
+
+        function proceedToStep2() {
+            closeStep1();
+            modal2.classList.add('active');
+        }
+
+        function closeStep2() {
+            modal2.classList.remove('active');
+        }
+
+        function engageEndgame() {
+            // 1. Close Modal
+            closeStep2();
+
+            // 2. Initialize Timer State
+            const now = Date.now();
+            const endTime = now + (TIMER_DURATION_SEC * 1000);
+
+            localStorage.setItem(KEY_STARTED, 'true');
+            localStorage.setItem(KEY_START_TIME, now.toString());
+            localStorage.setItem(KEY_END_TIME, endTime.toString());
+
+            // 3. Start UI Timer
+            initPhase3State();
+
+            // 4. Redirect (Open in new tab so timer remains visible)
+            window.open(HACKERRANK_URL, '_blank');
+        }
+
+        // --- Timer & State Logic ---
+
+        function initPhase3State() {
+            const isStarted = localStorage.getItem(KEY_STARTED) === 'true';
+
+            if (!isStarted) {
+                // Show Initial
+                initialState.style.display = 'block';
+                challengeActive.classList.remove('show');
+                timeoutMessage.classList.remove('show');
+                return;
+            }
+
+            const endTimeStr = localStorage.getItem(KEY_END_TIME);
+            if (!endTimeStr) return; // Should not happen if started
+
+            const endTime = parseInt(endTimeStr);
+            const now = Date.now();
+
+            if (now >= endTime) {
+                // EXPIRED
+                showExpiredState();
+            } else {
+                // ACTIVE
+                showActiveState();
+                startTimerLoop(endTime);
+            }
+        }
+
+        function showActiveState() {
+            initialState.style.display = 'none';
+            timeoutMessage.classList.remove('show');
+            challengeActive.classList.add('show');
+        }
+
+        function showExpiredState() {
+            initialState.style.display = 'none';
+            challengeActive.classList.remove('show');
+            timeoutMessage.classList.add('show');
+
+            if (timerInterval) clearInterval(timerInterval);
+        }
+
+        function startTimerLoop(endTime) {
+            // Clear any existing
+            if (timerInterval) clearInterval(timerInterval);
+
+            // Update immediately
+            updateTimerUI(endTime);
+
+            timerInterval = setInterval(() => {
+                const now = Date.now();
+                if (now >= endTime) {
+                    clearInterval(timerInterval);
+                    showExpiredState();
+                } else {
+                    updateTimerUI(endTime);
+                }
+            }, 1000);
+        }
+
+        function updateTimerUI(endTime) {
+            const now = Date.now();
+            const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+
+            const minStr = minutes.toString().padStart(2, '0');
+            const secStr = seconds.toString().padStart(2, '0');
+
+            timerDisplay.textContent = `${minStr}:${secStr}`;
+
+            if (remaining < 300) { // Red Alert last 5 mins
+                timerDisplay.classList.add('warning');
+            } else {
+                timerDisplay.classList.remove('warning');
+            }
+        }
+
+        // --- Dev Tools ---
+        function resetPhase3() {
+            if (confirm('DEV: Reset Phase 3 state?')) {
+                localStorage.removeItem(KEY_STARTED);
+                localStorage.removeItem(KEY_START_TIME);
+                localStorage.removeItem(KEY_END_TIME);
+                location.reload();
+            }
+        }
+
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initPhase3State();
+        });
+
+    </script>
+</body>
+
+</html>

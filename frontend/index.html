@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeVerse | The Cinematic Coding War</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .hero {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle, rgba(196, 30, 58, 0.1) 0%, rgba(0, 0, 0, 1) 100%);
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero h1 {
+            font-size: 5rem;
+            margin-bottom: 1rem;
+            text-shadow: var(--neon-glow-red-strong);
+            background: -webkit-linear-gradient(45deg, #fff, var(--accent-avengers), var(--accent-red-bright));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            margin-bottom: 3rem;
+            letter-spacing: 3px;
+        }
+
+        /* Ambient particles */
+        .particle {
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+            opacity: 0.3;
+            animation: float-up linear infinite;
+        }
+
+        @keyframes float-up {
+            to {
+                transform: translateY(-100vh) rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Ambient Background Elements -->
+    <div id="particle-container"></div>
+
+    <section class="hero animate-on-scroll">
+        <h1 class="floating">CODEVERSE</h1>
+        <p>THREE PHASES. ONE ULTIMATE CODING WAR.</p>
+        <a href="login.html" class="btn-cyber interactive">ENTER THE MULTIVERSE</a>
+    </section>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script>
+        // Simple Particle Generator
+        const container = document.getElementById('particle-container');
+        for (let i = 0; i < 50; i++) {
+            const p = document.createElement('div');
+            p.classList.add('particle');
+            p.style.left = Math.random() * 100 + 'vw';
+            p.style.top = Math.random() * 100 + 'vh';
+            p.style.width = Math.random() * 3 + 'px';
+            p.style.height = p.style.width;
+            p.style.animationDuration = (Math.random() * 5 + 5) + 's';
+            p.style.animationDelay = (Math.random() * 5) + 's';
+            container.appendChild(p);
+        }
+    </script>
+</body>
+
+</html>

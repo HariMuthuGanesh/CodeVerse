@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Identity Verification | CodeVerse</title>
+    <link rel="stylesheet" href="../static/css/main.css">
+    <style>
+        .login-container {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 500px;
+            padding: 3rem;
+        }
+
+        .form-group {
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-primary);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.1rem;
+            border-radius: 4px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .form-input:focus {
+            border-color: var(--accent-avengers);
+            box-shadow: 0 0 15px rgba(196, 30, 58, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .form-label {
+            position: absolute;
+            left: 1rem;
+            top: 1rem;
+            color: var(--text-secondary);
+            pointer-events: none;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.9rem;
+        }
+
+        .form-input:focus~.form-label,
+        .form-input:not(:placeholder-shown)~.form-label {
+            top: -1.5rem;
+            left: 0;
+            font-size: 0.8rem;
+            color: var(--accent-avengers);
+        }
+
+        .scan-line {
+            width: 100%;
+            height: 2px;
+            background: var(--accent-avengers);
+            box-shadow: 0 0 10px var(--accent-avengers);
+            margin-bottom: 2rem;
+            animation: scan 2s ease-in-out infinite;
+        }
+
+        @keyframes scan {
+            0% {
+                transform: scaleX(0);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scaleX(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scaleX(0);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <div class="glass-card login-card animate-on-scroll">
+            <h2 class="cinematic-title" style="text-align: center; margin-bottom: 2rem; color: var(--accent-avengers);">
+                IDENTITY VERIFICATION</h2>
+
+            <div class="scan-line"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <input type="text" id="username" class="form-input interactive" placeholder=" " required>
+                    <label for="username" class="form-label">Username</label>
+                </div>
+
+                <div class="form-group">
+                    <input type="text" id="rollno" class="form-input interactive" placeholder=" " required>
+                    <label for="rollno" class="form-label">Roll Number</label>
+                </div>
+
+                <div class="form-group">
+                    <input type="email" id="email" class="form-input interactive" placeholder=" " required>
+                    <label for="email" class="form-label">Email Address</label>
+                </div>
+
+                <div style="text-align: center; margin-top: 3rem;">
+                    <button type="submit" class="btn-cyber interactive">INITIALIZE PROTOCOL</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="../static/js/cursor.js"></script>
+    <script src="../static/js/animations.js"></script>
+    <script src="../static/js/login.js"></script>
+</body>
+
+</html>
