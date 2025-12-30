@@ -2,3 +2,4 @@ flask
 flask-session
 flask-cors
 gunicorn
+requests

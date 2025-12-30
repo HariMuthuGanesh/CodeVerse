@@ -2,6 +2,18 @@ from flask import Flask, jsonify, request, session, render_template, send_from_d
 from flask_cors import CORS
 from quiz_data import QUIZ_QUESTIONS
 import os
+import requests
+
+# Use the provided Webhook URL as a default if env var is not set
+SHEET_WEBHOOK_URL = os.environ.get("SHEET_WEBHOOK_URL", "https://script.google.com/macros/s/AKfycbwVCL3K613GQKKFYjfb7ShGJ2B4cp39_X_OCQfxc-NDVd9jB-j_dAxiDLkTOHlnxfJN/exec")
+
+def send_score_to_sheet(payload):
+    if not SHEET_WEBHOOK_URL:
+        return
+    try:
+        requests.post(SHEET_WEBHOOK_URL, json=payload, timeout=5)
+    except Exception as e:
+        print("Google Sheet error:", e)
 
 # Initialize Flask App with explicit folder paths for the requested structure
 # codeverse/backend/app.py
@@ -220,13 +232,22 @@ def submit_quiz():
     session['phase1_time_up'] = time_up
     session['phase1_questions_attempted'] = questions_attempted
 
-    # Update DB
     if session.get('rollno'):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('UPDATE users SET phase1_score = ? WHERE rollno = ?', (points, session['rollno']))
         conn.commit()
         conn.close()
+
+        # Send to Google Sheet
+        send_score_to_sheet({
+            "rollno": session.get("rollno"),
+            "username": session.get("username"),
+            "email": session.get("email"),
+            "phase": "Phase 1 - Quiz",
+            "score": points,
+            "max_score": 50
+        })
     
     return jsonify({
         "score": score,
@@ -254,6 +275,16 @@ def complete_phase_2():
         c.execute('UPDATE users SET phase2_score = ? WHERE rollno = ?', (points, session['rollno']))
         conn.commit()
         conn.close()
+        
+        # Send to Google Sheet
+        send_score_to_sheet({
+            "rollno": session.get("rollno"),
+            "username": session.get("username"),
+            "email": session.get("email"),
+            "phase": "Phase 2 - DSA",
+            "score": points,
+            "max_score": 50
+        })
 
     return jsonify({
         "success": True, 
@@ -279,6 +310,16 @@ def complete_phase_3():
         c.execute('UPDATE users SET phase3_score = ? WHERE rollno = ?', (points, session['rollno']))
         conn.commit()
         conn.close()
+
+        # Send to Google Sheet
+        send_score_to_sheet({
+            "rollno": session.get("rollno"),
+            "username": session.get("username"),
+            "email": session.get("email"),
+            "phase": "Phase 3 - Final",
+            "score": points,
+            "max_score": 100
+        })
     
     return jsonify({
         "success": True,
