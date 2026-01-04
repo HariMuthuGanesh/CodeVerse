@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, session, render_template, send_from_directory, Response
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
+from supabase import create_client, Client
 from quiz_data import QUIZ_QUESTIONS
 import os
 import io
@@ -17,44 +17,16 @@ app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.environ.get('SECRET_KEY', 'AVENGERS_ASSEMBLE_SECRET_KEY')
 CORS(app)
 
-# Database Configuration
-# Handle Render's postgres:// vs postgresql:// compatibility
-database_url = os.environ.get('DATABASE_URL', 'sqlite:///participants.db')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+# Supabase Configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')
 
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db = SQLAlchemy(app)
-
-# Database Model
-class Score(db.Model):
-    __tablename__ = 'scores'
-    id = db.Column(db.Integer, primary_key=True)
-    rollno = db.Column(db.String(50), nullable=False)
-    username = db.Column(db.String(100))
-    email = db.Column(db.String(100))
-    phase = db.Column(db.String(50))
-    score = db.Column(db.Integer)
-    max_score = db.Column(db.Integer)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'rollno': self.rollno,
-            'username': self.username,
-            'email': self.email,
-            'phase': self.phase,
-            'score': self.score,
-            'max_score': self.max_score,
-            'created_at': self.created_at.isoformat()
-        }
-
-# Initialize DB
-with app.app_context():
-    db.create_all()
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"Supabase Init Error: {e}")
 
 # Configuration
 PASSING_SCORE = 0
@@ -115,31 +87,36 @@ def api_login():
     session['rollno'] = rollno
     session['email'] = email
     
-    # Retrieve past scores from DB to restore session state
-    try:
-        # Get all scores for this user
-        scores = Score.query.filter_by(rollno=rollno).all()
-        
-        # Reset session scores
-        session['phase1_score'] = 0
-        session['phase2_score'] = 0
-        session['phase3_score'] = 0
-        
-        # Populate based on history
-        for s in scores:
-            if "Phase 1" in s.phase:
-                session['phase1_score'] = max(session.get('phase1_score', 0), s.score)
-                session['phase1_completed'] = True
-            elif "Phase 2" in s.phase:
-                session['phase2_score'] = max(session.get('phase2_score', 0), s.score)
-                session['phase2_completed'] = True
-            elif "Phase 3" in s.phase:
-                session['phase3_score'] = max(session.get('phase3_score', 0), s.score)
-                session['phase3_completed'] = True
+    # Retrieve past scores from Supabase to restore session state
+    if supabase:
+        try:
+            # Check if user exists
+            response = supabase.table('participants').select("*").eq('email', email).execute()
+            data_rows = response.data
+            
+            if data_rows:
+                user_data = data_rows[0]
+                # Reset session scores
+                session['phase1_score'] = 0
+                session['phase2_score'] = 0
+                session['phase3_score'] = 0
+
+                # Populate based on Supabase data
+                if user_data.get('phase1_score') is not None:
+                    session['phase1_score'] = user_data['phase1_score']
+                    session['phase1_completed'] = True
                 
-    except Exception as e:
-        print(f"Login DB Error: {e}")
-        # Continue login even if DB fails, treating as new session locally
+                if user_data.get('phase2_score') is not None:
+                    session['phase2_score'] = user_data['phase2_score']
+                    session['phase2_completed'] = True
+                
+                if user_data.get('phase3_score') is not None:
+                    session['phase3_score'] = user_data['phase3_score']
+                    session['phase3_completed'] = True
+            
+        except Exception as e:
+            print(f"Login Supabase Error: {e}")
+            # Continue login even if DB fails, treating as new session locally
 
     return jsonify({"success": True})
 
@@ -210,21 +187,23 @@ def submit_quiz():
     session['phase1_time_up'] = time_up
     session['phase1_questions_attempted'] = questions_attempted
 
-    # Store in DB
-    if session.get('rollno'):
+    # Store in Supabase
+    if session.get('email') and supabase:
         try:
-            new_score = Score(
-                rollno=session['rollno'],
-                username=session.get('username'),
-                email=session.get('email'),
-                phase="Phase 1 - Quiz",
-                score=points,
-                max_score=50
-            )
-            db.session.add(new_score)
-            db.session.commit()
+            # Upsert participant data
+            user_data = {
+                "name": session.get('username'),
+                "email": session.get('email'),
+                "phase1_score": points,
+                # we don't overwrite total_score here strictly, let's update it
+                "total_score": points + session.get('phase2_score', 0) + session.get('phase3_score', 0),
+                "created_at": datetime.utcnow().isoformat()
+            }
+            # We use email as unique key if possible, but upsert usually needs a constraint.
+            # Assuming 'participants' table has a unique constraint on email.
+            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
-            print(f"DB Error submit-quiz: {e}")
+            print(f"Supabase Error submit-quiz: {e}")
 
     return jsonify({
         "score": score,
@@ -244,20 +223,18 @@ def complete_phase_2():
     session['phase2_score'] = points
     session['phase2_max_score'] = 50
     
-    if session.get('rollno'):
+    if session.get('email') and supabase:
         try:
-            new_score = Score(
-                rollno=session['rollno'],
-                username=session.get('username'),
-                email=session.get('email'),
-                phase="Phase 2 - DSA",
-                score=points,
-                max_score=50
-            )
-            db.session.add(new_score)
-            db.session.commit()
+            current_total = session.get('phase1_score', 0) + points + session.get('phase3_score', 0)
+            user_data = {
+                "name": session.get('username'),
+                "email": session.get('email'),
+                "phase2_score": points,
+                "total_score": current_total
+            }
+            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
-            print(f"DB Error complete-phase-2: {e}")
+            print(f"Supabase Error complete-phase-2: {e}")
 
     return jsonify({
         "success": True, 
@@ -274,20 +251,18 @@ def complete_phase_3():
     session['phase3_score'] = points
     session['phase3_max_score'] = 100
     
-    if session.get('rollno'):
+    if session.get('email') and supabase:
         try:
-            new_score = Score(
-                rollno=session['rollno'],
-                username=session.get('username'),
-                email=session.get('email'),
-                phase="Phase 3 - Final",
-                score=points,
-                max_score=100
-            )
-            db.session.add(new_score)
-            db.session.commit()
+            current_total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + points
+            user_data = {
+                "name": session.get('username'),
+                "email": session.get('email'),
+                "phase3_score": points,
+                "total_score": current_total
+            }
+            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
-            print(f"DB Error complete-phase-3: {e}")
+            print(f"Supabase Error complete-phase-3: {e}")
     
     return jsonify({
         "success": True,
@@ -325,51 +300,28 @@ def get_total_score():
 
 @app.route('/api/admin/export', methods=['GET'])
 def export_data():
+
     try:
-        # Aggregate scores by user
-        scores = Score.query.all()
-        user_map = {}
-        
-        for s in scores:
-            if s.rollno not in user_map:
-                user_map[s.rollno] = {
-                    'rollno': s.rollno,
-                    'username': s.username,
-                    'email': s.email,
-                    'phase1_score': 0,
-                    'phase2_score': 0,
-                    'phase3_score': 0,
-                    'last_activity': s.created_at
-                }
-            
-            u = user_map[s.rollno]
-            # Update latest activity
-            if s.created_at > u['last_activity']:
-                u['last_activity'] = s.created_at
-            
-            # Update max score per phase
-            if "Phase 1" in s.phase:
-                u['phase1_score'] = max(u['phase1_score'], s.score)
-            elif "Phase 2" in s.phase:
-                u['phase2_score'] = max(u['phase2_score'], s.score)
-            elif "Phase 3" in s.phase:
-                u['phase3_score'] = max(u['phase3_score'], s.score)
+        if not supabase:
+             return "Supabase not configured", 500
+
+        # Fetch all scores from Supabase
+        response = supabase.table('participants').select("*").execute()
+        participants = response.data
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(['Roll No', 'Username', 'Email', 'Phase 1 Score', 'Phase 2 Score', 'Phase 3 Score', 'Total Score', 'Last Activity'])
+        writer.writerow(['Name', 'Email', 'Phase 1 Score', 'Phase 2 Score', 'Phase 3 Score', 'Total Score', 'Created At'])
 
-        for rollno, u in user_map.items():
-            total = u['phase1_score'] + u['phase2_score'] + u['phase3_score']
+        for p in participants:
             writer.writerow([
-                u['rollno'],
-                u['username'],
-                u['email'],
-                u['phase1_score'],
-                u['phase2_score'],
-                u['phase3_score'],
-                total,
-                u['last_activity'].isoformat()
+                p.get('name', ''),
+                p.get('email', ''),
+                p.get('phase1_score', 0),
+                p.get('phase2_score', 0),
+                p.get('phase3_score', 0),
+                p.get('total_score', 0),
+                p.get('created_at', '')
             ])
 
         output.seek(0)
@@ -383,11 +335,17 @@ def export_data():
 
 @app.route('/api/debug/scores', methods=['GET'])
 def debug_scores():
+
     try:
-        scores = Score.query.order_by(Score.created_at.desc()).all()
-        return jsonify([s.to_dict() for s in scores])
+        if not supabase:
+             return jsonify({"error": "Supabase not configured"})
+
+        # Fetch top scores
+        response = supabase.table('participants').select("*").order('total_score', desc=True).execute()
+        return jsonify(response.data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/reset', methods=['POST'])
 def reset_progress():
