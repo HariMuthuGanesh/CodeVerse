@@ -1,367 +1,192 @@
 /**
- * DSA Tree Validation Module
- * Proper implementation of BST, AVL, and B-Tree validation
+ * DSA Tree Logic Module
+ * Handles Node structures and Validation logic
  */
-
-// ============================================================================
-// TREE NODE CLASSES
-// ============================================================================
 
 class TreeNode {
     constructor(value) {
         this.value = value;
         this.left = null;
         this.right = null;
-        this.height = 1; // Required for AVL
-        this.color = 'black'; // Required for RB
+        this.color = 'black'; // RB Support
+        this.highlight = false; // Viz support
     }
 }
 
-class BTreeNode {
-    constructor(leaf = false) {
-        this.keys = [];      // Array of keys (1-2 for order 3)
-        this.children = [];  // Array of child nodes
-        this.leaf = leaf;    // Whether this is a leaf node
+// Visualizer: Draw Tree to DOM
+// Simplistic recursive DOM renderer for the BST Visualization
+function renderTreeToDOM(root, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = '';
+    if (!root) {
+        container.innerHTML = '<div style="position:absolute; top:50%; color:gray;">Empty Tree</div>';
+        return;
     }
+
+    const treeEl = createTreeDOMRecursive(root);
+    container.appendChild(treeEl);
 }
 
-// ============================================================================
-// UI TO TREE CONVERSION
-// ============================================================================
+function createTreeDOMRecursive(node) {
+    if (!node) return document.createElement('div'); // spacer
 
-/**
- * Converts UI slot positions to a binary tree structure
- * Slot mapping for BST/AVL/RB (complete binary tree layout):
- * Level 0: slot-1 (root)
- * Level 1: slot-2 (left), slot-3 (right)
- * Level 2: slot-4 (left-left), slot-5 (left-right), slot-6 (right-left), slot-7 (right-right)
- * Level 3: slot-8-15 (continues pattern)
- */
-function convertSlotsToBinaryTree(challengeType, maxSlots) {
-    const nodes = [];
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node';
 
-    // First pass: collect all values from slots
-    for (let i = 1; i <= maxSlots; i++) {
-        const slot = document.getElementById(`${challengeType}-slot-${i}`);
-        if (slot && slot.children.length > 0) {
-            const child = slot.children[0];
-            const value = parseInt(child.dataset.value);
-            const color = child.dataset.color || 'black'; // Default to black
-
-            if (value !== null && !isNaN(value)) {
-                const node = new TreeNode(value);
-                node.color = color; // 'red' or 'black'
-                nodes[i] = node;
-            } else {
-                nodes[i] = null;
-            }
-        } else {
-            nodes[i] = null;
-        }
+    const circle = document.createElement('div');
+    circle.className = `node-circle ${node.highlight ? 'highlight' : ''}`;
+    circle.textContent = node.value;
+    if (node.color === 'red') {
+        circle.style.background = '#D00';
+        circle.style.border = '2px solid white';
+    } else if (node.color === 'black') {
+        circle.style.background = 'black';
+        circle.style.border = '2px solid var(--accent-avengers)';
+    } else {
+        // Standard BST node
+        circle.style.background = 'var(--accent-avengers)';
     }
 
-    // Second pass: link nodes according to complete binary tree structure
-    // Parent at index i has children at 2*i and 2*i+1
-    for (let i = 1; i <= maxSlots; i++) {
-        if (nodes[i]) {
-            const leftIndex = 2 * i;
-            const rightIndex = 2 * i + 1;
+    wrapper.appendChild(circle);
 
-            if (leftIndex <= maxSlots) {
-                nodes[i].left = nodes[leftIndex] || null;
-            }
-            if (rightIndex <= maxSlots) {
-                nodes[i].right = nodes[rightIndex] || null;
-            }
-        }
+    if (node.left || node.right) {
+        const childrenContainer = document.createElement('div');
+        childrenContainer.style.display = 'flex';
+        childrenContainer.style.marginTop = '20px';
+        childrenContainer.style.gap = '20px';
+        childrenContainer.style.borderTop = '2px solid rgba(255,255,255,0.2)'; // Simple connector line
+
+        childrenContainer.appendChild(createTreeDOMRecursive(node.left));
+        childrenContainer.appendChild(createTreeDOMRecursive(node.right));
+
+        wrapper.appendChild(childrenContainer);
     }
 
-    return nodes[1] || null; // Return root (slot 1)
+    return wrapper;
 }
 
-/**
- * Converts UI slots to B-Tree structure (order 3)
- * B-Tree layout for this UI:
- * Level 0: slot-1, slot-2 (root keys)
- * Level 1: slot-3 (left child), slot-4 (middle child), slot-5 (right child)
- */
-function convertSlotsToBTree(challengeType) {
-    const root = new BTreeNode(false);
+// --- UTILS ---
 
-    // Get root keys (slots 1 and 2)
-    const slot1 = document.getElementById(`${challengeType}-slot-1`);
-    const slot2 = document.getElementById(`${challengeType}-slot-2`);
-
-    if (slot1 && slot1.children.length > 0) {
-        root.keys.push(parseInt(slot1.children[0].dataset.value));
-    }
-    if (slot2 && slot2.children.length > 0) {
-        root.keys.push(parseInt(slot2.children[0].dataset.value));
-    }
-
-    // Sort root keys
-    root.keys.sort((a, b) => a - b);
-
-    // Get children (slots 3, 4, 5)
-    const slot3 = document.getElementById(`${challengeType}-slot-3`);
-    const slot4 = document.getElementById(`${challengeType}-slot-4`);
-    const slot5 = document.getElementById(`${challengeType}-slot-5`);
-
-    if (slot3 && slot3.children.length > 0) {
-        const child = new BTreeNode(true);
-        child.keys.push(parseInt(slot3.children[0].dataset.value));
-        root.children.push(child);
-    }
-    if (slot4 && slot4.children.length > 0) {
-        const child = new BTreeNode(true);
-        child.keys.push(parseInt(slot4.children[0].dataset.value));
-        root.children.push(child);
-    }
-    if (slot5 && slot5.children.length > 0) {
-        const child = new BTreeNode(true);
-        child.keys.push(parseInt(slot5.children[0].dataset.value));
-        root.children.push(child);
-    }
-
-    // If root has no keys, return null
-    if (root.keys.length === 0) {
-        return null;
-    }
-
+function insertBST(root, value) {
+    if (!root) return new TreeNode(value);
+    if (value < root.value) root.left = insertBST(root.left, value);
+    else if (value > root.value) root.right = insertBST(root.right, value);
     return root;
 }
 
-// ============================================================================
-// BST VALIDATION (PROPER IMPLEMENTATION)
-// ============================================================================
+function searchBST(root, value) {
+    if (!root || root.value == value) return root;
+    if (value < root.value) return searchBST(root.left, value);
+    return searchBST(root.right, value);
+}
 
-/**
- * Validates BST using min/max range propagation
- * This ensures ALL nodes in left subtree < root < ALL nodes in right subtree
- */
+function getMin(node) {
+    while (node.left) node = node.left;
+    return node;
+}
+
+function deleteBST(root, value) {
+    if (!root) return root;
+
+    if (value < root.value) root.left = deleteBST(root.left, value);
+    else if (value > root.value) root.right = deleteBST(root.right, value);
+    else {
+        // Node found
+        if (!root.left) return root.right;
+        if (!root.right) return root.left;
+
+        let temp = getMin(root.right);
+        root.value = temp.value;
+        root.right = deleteBST(root.right, temp.value);
+    }
+    return root;
+}
+
+function inorderBST(root, res = []) {
+    if (!root) return res;
+    inorderBST(root.left, res);
+    res.push(root.value);
+    inorderBST(root.right, res);
+    return res;
+}
+
+
+// --- VALIDATION (Legacy/RB) ---
+
 function isValidBST(node, min = -Infinity, max = Infinity) {
     if (!node) return true;
-
-    // Current node must be within range
-    if (node.value <= min || node.value >= max) {
-        return false;
-    }
-
-    // Recursively validate left and right subtrees
-    return (
-        isValidBST(node.left, min, node.value) &&
-        isValidBST(node.right, node.value, max)
-    );
+    if (node.value <= min || node.value >= max) return false;
+    return isValidBST(node.left, min, node.value) && isValidBST(node.right, node.value, max);
 }
-
-/**
- * Validates BST from UI state
- */
-function validateBSTFromUI(challengeType, maxSlots) {
-    // Check all slots are filled
-    for (let i = 1; i <= maxSlots; i++) {
-        const slot = document.getElementById(`${challengeType}-slot-${i}`);
-        if (!slot || slot.children.length === 0) {
-            return { valid: false, error: "Timeline Incomplete. Fill all nodes." };
-        }
-    }
-
-    // Convert UI to tree structure
-    const root = convertSlotsToBinaryTree(challengeType, maxSlots);
-
-    if (!root) {
-        return { valid: false, error: "Invalid tree structure." };
-    }
-
-    // Validate using proper BST algorithm
-    const valid = isValidBST(root);
-
-    if (!valid) {
-        return { valid: false, error: "Timeline Paradox Detected. Invalid Binary Search Tree. All left subtree values must be < root < all right subtree values." };
-    }
-
-    return { valid: true, error: null };
-}
-
-// ============================================================================
-// AVL TREE VALIDATION (FULL IMPLEMENTATION)
-// ============================================================================
-
-/**
- * Calculate height of a node (for AVL)
- */
-function getHeight(node) {
-    if (!node) return 0;
-    return node.height;
-}
-
-/**
- * Calculate balance factor of a node
- * Balance factor = height(left) - height(right)
- */
-function getBalance(node) {
-    if (!node) return 0;
-    return getHeight(node.left) - getHeight(node.right);
-}
-
-/**
- * Update height of a node based on children
- */
-function updateHeight(node) {
-    if (!node) return;
-    node.height = 1 + Math.max(getHeight(node.left), getHeight(node.right));
-}
-
-/**
- * Update heights for entire tree (bottom-up)
- */
-function updateAllHeights(node) {
-    if (!node) return;
-    updateAllHeights(node.left);
-    updateAllHeights(node.right);
-    updateHeight(node);
-}
-
-/**
- * Check if tree is valid AVL
- * Must satisfy:
- * 1. Valid BST property
- * 2. Balance factor ∈ {-1, 0, 1} for ALL nodes
- */
-function isValidAVL(node) {
-    if (!node) return true;
-
-    // First, ensure it's a valid BST
-    if (!isValidBST(node)) {
-        return false;
-    }
-
-    // Update all heights
-    updateAllHeights(node);
-
-    // Check balance factor for current node
-    const balance = getBalance(node);
-    if (balance < -1 || balance > 1) {
-        return false;
-    }
-
-    // Recursively check all children
-    return isValidAVL(node.left) && isValidAVL(node.right);
-}
-
-/**
- * Validates AVL from UI state
- */
-function validateAVLFromUI(challengeType, maxSlots) {
-    // Check all slots are filled
-    for (let i = 1; i <= maxSlots; i++) {
-        const slot = document.getElementById(`${challengeType}-slot-${i}`);
-        if (!slot || slot.children.length === 0) {
-            return { valid: false, error: "Timeline Incomplete. Fill all nodes." };
-        }
-    }
-
-    // Convert UI to tree structure
-    const root = convertSlotsToBinaryTree(challengeType, maxSlots);
-
-    if (!root) {
-        return { valid: false, error: "Invalid tree structure." };
-    }
-
-    // Validate using proper AVL algorithm
-    const valid = isValidAVL(root);
-
-    if (!valid) {
-        return { valid: false, error: "Timeline Paradox Detected. Invalid AVL Tree. Tree must be a valid BST with balance factor -1, 0, or 1 for all nodes." };
-    }
-
-    return { valid: true, error: null };
-}
-
-// ============================================================================
-// B-TREE VALIDATION (ORDER 3 - PROPER IMPLEMENTATION)
-// ============================================================================
-
-// ============================================================================
-// RED-BLACK TREE VALIDATION
-// ============================================================================
 
 function isValidRB(node) {
-    if (!node) return { valid: true, blackHeight: 1 }; // Null is considered black
+    if (!node) return { valid: true, blackHeight: 1 };
 
-    // 1. Check BST property
-    if (!isValidBST(node)) {
-        return { valid: false, error: "BST violation: Left < Root < Right rule broken." };
-    }
+    if (!isValidBST(node)) return { valid: false, error: "Not a BST" };
 
-    // 2. No Red-Red violation
     if (node.color === 'red') {
-        if ((node.left && node.left.color === 'red') ||
-            (node.right && node.right.color === 'red')) {
-            return { valid: false, error: "Color violation: Red node cannot have Red children." };
+        if ((node.left && node.left.color === 'red') || (node.right && node.right.color === 'red')) {
+            return { valid: false, error: "Red node has Red child" };
         }
     }
 
-    // 3. Black Height consistency
-    const leftResult = isValidRB(node.left);
-    if (!leftResult.valid) return leftResult;
+    const l = isValidRB(node.left);
+    if (!l.valid) return l;
+    const r = isValidRB(node.right);
+    if (!r.valid) return r;
 
-    const rightResult = isValidRB(node.right);
-    if (!rightResult.valid) return rightResult;
+    if (l.blackHeight !== r.blackHeight) return { valid: false, error: "Black height mismatch" };
 
-    // Check if black heights match
-    if (leftResult.blackHeight !== rightResult.blackHeight) {
-        return { valid: false, error: "Black Height violation: All paths must have same number of black nodes." };
-    }
-
-    // Calculate current black height
-    const currentHeight = leftResult.blackHeight + (node.color === 'black' ? 1 : 0);
-
-    return { valid: true, blackHeight: currentHeight };
+    return { valid: true, blackHeight: l.blackHeight + (node.color === 'black' ? 1 : 0) };
 }
 
-function validateRBFromUI(challengeType, maxSlots) {
-    // Check if all slots (at least key ones) are filled or allow partial tree?
-    // User said "One question = one drag-and-drop area", "Submit -> Validate".
-    // Let's require the tree to be formed by whatever is in the slots. 
-    // BUT we must check if it's a valid tree structure first (connected).
-    // Our convertSlots uses complete binary tree mapping, so gaps might mean nulls.
+// Helper to convert slots back to tree (for RB legacy challenge)
+function convertSlotsToTree(prefix, count) {
+    // Array rep 1-based
+    let nodes = new Array(count + 1).fill(null);
 
-    // Check root exists
-    const rootSlot = document.getElementById(`${challengeType}-slot-1`);
-    if (!rootSlot || rootSlot.children.length === 0) {
-        return { valid: false, error: "Root node is missing." };
+    for (let i = 1; i <= count; i++) {
+        const slot = document.getElementById(`${prefix}-slot-${i}`);
+        if (slot && slot.children.length > 0) {
+            const el = slot.children[0];
+            const val = parseInt(el.dataset.value);
+            const col = el.dataset.color || 'black';
+            const n = new TreeNode(val);
+            n.color = col;
+            nodes[i] = n;
+        }
     }
 
-    const root = convertSlotsToBinaryTree(challengeType, maxSlots);
-
-    // 1. Root Property: Root must be BLACK
-    if (root.color !== 'black') {
-        return { valid: false, error: "Root Rule violation: The root node must be BLACK." };
+    // Link
+    for (let i = 1; i <= count; i++) {
+        if (nodes[i]) {
+            if (2 * i <= count) nodes[i].left = nodes[2 * i];
+            if (2 * i + 1 <= count) nodes[i].right = nodes[2 * i + 1];
+        }
     }
 
-    // Validate RB rules recursively
-    const result = isValidRB(root);
-
-    if (!result.valid) {
-        return { valid: false, error: result.error };
-    }
-
-    return { valid: true, error: null };
+    return nodes[1];
 }
 
-// ============================================================================
-// EXPORT FUNCTIONS
-// ============================================================================
+function validateRBFromUI() {
+    // Check Root
+    const root = convertSlotsToTree('rb', 7);
+    if (!root) return { valid: false, error: "Root missing" };
+    if (root.color !== 'black') return { valid: false, error: "Root must be black" };
+    return isValidRB(root);
+}
 
-// Export validation functions for use in dsa.js
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        validateAVLFromUI,
-        validateRBFromUI,
-        isValidBST,
-        isValidAVL,
-        isValidRB
+// Export for usage if needed (though we just load script globally)
+if (typeof window !== 'undefined') {
+    window.DSATree = {
+        TreeNode,
+        insertBST,
+        searchBST,
+        deleteBST,
+        inorderBST,
+        renderTreeToDOM,
+        validateRBFromUI
     };
 }
-

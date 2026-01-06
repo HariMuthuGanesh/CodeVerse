@@ -15,12 +15,44 @@
             padding: 2rem;
         }
 
+        /* HUD & Timer */
+        .hud-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 1000px;
+            margin-bottom: 2rem;
+            padding: 1rem 2rem;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--accent-avengers);
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+        }
+
+        .timer-display {
+            font-size: 2rem;
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-avengers);
+            text-shadow: 0 0 10px var(--accent-avengers);
+        }
+
+        .timer-display.warning {
+            color: var(--accent-red-bright);
+            animation: pulse 1s infinite;
+        }
+
+        .score-display,
+        .question-display {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            color: var(--text-primary);
+        }
+
         .challenge-tabs {
             display: flex;
             gap: 1rem;
             margin-bottom: 2rem;
-            flex-wrap: wrap;
-            justify-content: center;
         }
 
         .challenge-tab {
@@ -34,37 +66,120 @@
             transition: all 0.3s ease;
         }
 
-        .challenge-tab:hover {
-            background: rgba(196, 30, 58, 0.3);
-            box-shadow: 0 0 15px var(--accent-avengers);
-        }
-
         .challenge-tab.active {
             background: rgba(196, 30, 58, 0.4);
             box-shadow: 0 0 20px var(--accent-avengers);
         }
 
-        .challenge-tab.completed {
-            border-color: var(--accent-red-bright);
-            background: rgba(255, 23, 68, 0.2);
-        }
-
         .challenge-content {
             display: none;
             width: 100%;
-            max-width: 900px;
+            max-width: 1000px;
+            flex-direction: column;
+            align-items: center;
         }
 
         .challenge-content.active {
-            display: block;
+            display: flex;
         }
 
+        /* BST Game UI */
+        .bst-viz-container {
+            width: 100%;
+            height: 500px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid var(--accent-avengers);
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            padding-top: 40px;
+        }
+
+        /* Simple recursive tree CSS */
+        .tree-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            margin: 0 10px;
+        }
+
+        .node-circle {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-avengers);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: white;
+            z-index: 2;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .node-circle.highlight {
+            background: #FFD700;
+            /* Gold for search/active */
+            color: black;
+            transform: scale(1.2);
+        }
+
+        .node-connectors {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            position: relative;
+            /* Lines drawn via SVG or pseudo-elements heavily simplified here */
+        }
+
+        .connector-line {
+            /* Fallback or SVG logic needed. 
+               For this implementation, we might just use simple margins */
+        }
+
+        .controls-area {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .bst-controls {
+            display: flex;
+            gap: 1rem;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        .btn-action {
+            padding: 0.5rem 1.5rem;
+            background: transparent;
+            border: 1px solid var(--accent-avengers);
+            color: var(--accent-avengers);
+            font-family: 'Orbitron';
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn-action:hover {
+            background: var(--accent-avengers);
+            color: white;
+        }
+
+        /* Legacy Dropzones for RB */
         .bank-container {
             display: flex;
             gap: 1rem;
             padding: 1rem;
             border-bottom: 2px solid var(--accent-avengers);
-            margin-bottom: 3rem;
+            margin-bottom: 2rem;
             background: rgba(0, 0, 0, 0.5);
             border-radius: 8px;
             flex-wrap: wrap;
@@ -86,25 +201,6 @@
             font-family: 'Orbitron';
         }
 
-        .draggable.dragging {
-            opacity: 0.5;
-            cursor: grabbing;
-        }
-
-        .tree-layout {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 2rem;
-            position: relative;
-        }
-
-        .level {
-            display: flex;
-            gap: 4rem;
-            justify-content: center;
-        }
-
         .dropzone {
             width: 60px;
             height: 60px;
@@ -115,39 +211,9 @@
             align-items: center;
             transition: all 0.3s;
             background: rgba(0, 0, 0, 0.3);
-            position: relative;
         }
 
-        .dropzone .draggable {
-            cursor: pointer;
-        }
-
-        .dropzone .draggable:hover {
-            transform: scale(1.1);
-            box-shadow: 0 0 20px var(--accent-red-bright);
-        }
-
-        .dropzone.drag-over {
-            border-color: var(--accent-avengers);
-            background: rgba(196, 30, 58, 0.2);
-            transform: scale(1.1);
-            box-shadow: 0 0 15px var(--accent-avengers);
-        }
-
-        .instructions {
-            margin-bottom: 2rem;
-            color: var(--text-secondary);
-            text-align: center;
-            max-width: 600px;
-        }
-
-        .progress-indicator {
-            margin-bottom: 2rem;
-            text-align: center;
-            color: var(--accent-avengers);
-            font-family: 'Orbitron', sans-serif;
-        }
-
+        /* Modals */
         #loading-overlay {
             background: rgba(0, 0, 0, 0.9);
             z-index: 2000;
@@ -167,161 +233,94 @@
                 transform: rotate(360deg);
             }
         }
-
-        .challenge-info {
-            background: rgba(196, 30, 58, 0.1);
-            border: 1px solid var(--accent-avengers);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 2rem;
-            text-align: center;
-        }
-
-        .phase2-timer {
-            font-size: 2rem;
-            font-family: 'Orbitron', sans-serif;
-            color: var(--accent-avengers);
-            text-shadow: 0 0 10px var(--accent-avengers);
-            margin-bottom: 2rem;
-            padding: 1rem 2rem;
-            background: rgba(196, 30, 58, 0.1);
-            border: 2px solid var(--accent-avengers);
-            border-radius: 8px;
-        }
-
-        .phase2-timer.warning {
-            color: var(--accent-red-bright);
-            text-shadow: 0 0 20px var(--accent-red-bright);
-            animation: pulse 1s infinite;
-        }
-
-        .phase2-timer.time-up {
-            color: var(--accent-red-bright);
-            text-shadow: 0 0 30px var(--accent-red-bright);
-        }
     </style>
 </head>
 
 <body>
 
     <div class="dsa-container">
-        <h2 class="cinematic-title"
-            style="color: var(--accent-avengers); text-shadow: 0 0 20px var(--accent-avengers);">PHASE
-            2: TIME STONE</h2>
-        <p class="instructions">Master the timeline. Complete all three challenges to stabilize reality.</p>
-
-        <div class="phase2-timer" id="phase2-timer">10:00</div>
-
-        <div class="progress-indicator" id="progress-indicator">
-            Progress: 0/3 challenges completed
+        <!-- HUD PANEL -->
+        <div class="hud-panel">
+            <div class="score-display" id="score-display">BST Score: 0</div>
+            <div class="timer-display" id="phase2-timer">10:00</div>
+            <div>
+                <button class="btn-action" onclick="leaveRound(false)"
+                    style="border-color: #FFA500; color: #FFA500; margin-right: 1rem;">PAUSE & LEAVE</button>
+                <button class="btn-action" onclick="finishRound()" style="border-color: #FF0000; color: #FF0000;">FINISH
+                    ROUND</button>
+            </div>
         </div>
+
+        <h2 class="cinematic-title" style="color: var(--accent-avengers); margin-bottom: 0.5rem;">PHASE 2: TIME STONE
+        </h2>
+        <p style="color: grey; margin-bottom: 2rem;">Manage the Timeline. Pause to save time. Finish to lock score.</p>
 
         <div class="challenge-tabs">
-            <button class="challenge-tab active" onclick="showChallenge('avl')" id="tab-avl">
-                Challenge 1: AVL Tree (25 pts)
+            <button class="challenge-tab active" onclick="showChallenge('bst')" id="tab-bst">
+                Binary Search Tree
             </button>
             <button class="challenge-tab" onclick="showChallenge('rb')" id="tab-rb">
-                Challenge 2: Red-Black Tree (25 pts)
+                Red-Black Tree
             </button>
         </div>
 
-
-
-        <!-- AVL Challenge -->
-        <div id="challenge-avl" class="challenge-content active">
-            <div class="challenge-info">
-                <h3>AVL Tree Challenge</h3>
-                <p>Construct a balanced AVL tree. Balance factor must be -1, 0, or 1 for all nodes.</p>
-            </div>
-            <p class="instructions">Drag the nodes to construct a valid <strong>AVL Tree</strong> (self-balancing BST)
-            </p>
-
-            <div class="bank-container glass-card" id="avl-bank">
-                <div class="draggable interactive" draggable="true" id="avl-node-50" data-value="50">50</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-30" data-value="30">30</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-70" data-value="70">70</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-20" data-value="20">20</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-40" data-value="40">40</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-60" data-value="60">60</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-80" data-value="80">80</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-10" data-value="10">10</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-25" data-value="25">25</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-35" data-value="35">35</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-55" data-value="55">55</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-65" data-value="65">65</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-75" data-value="75">75</div>
-                <div class="draggable interactive" draggable="true" id="avl-node-90" data-value="90">90</div>
+        <!-- BST CHALLENGE UI -->
+        <div id="challenge-bst" class="challenge-content active">
+            <div class="question-display" id="bst-question" style="margin-bottom: 1rem; color: white;">
+                Question 1: Insert 50
             </div>
 
-            <div class="tree-layout" id="avl-tree">
-                <div class="level">
-                    <div class="dropzone" id="avl-slot-1"></div>
-                </div>
-                <div class="level" style="gap: 8rem;">
-                    <div class="dropzone" id="avl-slot-2"></div>
-                    <div class="dropzone" id="avl-slot-3"></div>
-                </div>
-                <div class="level" style="gap: 4rem;">
-                    <div class="dropzone" id="avl-slot-4"></div>
-                    <div class="dropzone" id="avl-slot-5"></div>
-                    <div class="dropzone" id="avl-slot-6"></div>
-                    <div class="dropzone" id="avl-slot-7"></div>
-                </div>
-                <div class="level" style="gap: 2rem;">
-                    <div class="dropzone" id="avl-slot-8"></div>
-                    <div class="dropzone" id="avl-slot-9"></div>
-                    <div class="dropzone" id="avl-slot-10"></div>
-                    <div class="dropzone" id="avl-slot-11"></div>
-                    <div class="dropzone" id="avl-slot-12"></div>
-                    <div class="dropzone" id="avl-slot-13"></div>
-                    <div class="dropzone" id="avl-slot-14"></div>
-                    <div class="dropzone" id="avl-slot-15"></div>
-                </div>
+            <!-- Visualization Area -->
+            <div class="bst-viz-container" id="bst-viz">
+                <!-- Tree rendered here dynamically -->
+                <div style="position: absolute; top: 50%; color: rgba(255,255,255,0.2);">Tree Area</div>
             </div>
 
-            <button class="btn-cyber interactive" onclick="validateAVL()"
-                style="margin-top: 3rem; border-color: var(--accent-avengers); color: var(--accent-avengers);">
-                VALIDATE AVL
-            </button>
+            <div class="controls-area">
+                <input type="number" id="bst-input" placeholder="Value"
+                    style="padding:0.5rem; border-radius:4px; border:none;">
+                <button class="btn-action" onclick="handleBSTAction('insert')">INSERT</button>
+                <button class="btn-action" onclick="handleBSTAction('search')">SEARCH</button>
+                <button class="btn-action" onclick="handleBSTAction('delete')">DELETE</button>
+                <button class="btn-action" onclick="handleBSTAction('inorder')">INORDER</button>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.9rem; color: grey;">Use the controls to match the current/active
+                question.</p>
         </div>
 
-        <!-- Red-Black Tree Challenge -->
+        <!-- RED-BLACK CHALLENGE UI (Legacy Support) -->
         <div id="challenge-rb" class="challenge-content">
-            <div class="challenge-info">
+            <div style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
                 <h3>Red-Black Tree Challenge</h3>
                 <p>Color the nodes and place them correctly. Root must be BLACK. No Red-Red relationships.</p>
             </div>
-            <p class="instructions">Drag nodes to construct a valid <strong>Red-Black Tree</strong>.</p>
 
-            <!-- Bank with colored nodes. data-color attribute helps validation -->
-            <div class="bank-container glass-card" id="rb-bank">
-                <!-- Node Format: Value (Color) -->
-                <div class="draggable interactive" draggable="true" id="rb-node-10" data-value="10" data-color="black"
-                    style="background: #000; border: 2px solid var(--accent-avengers);">10</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-5" data-value="5" data-color="red"
-                    style="background: #D00; border: 2px solid #FFF;">5</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-15" data-value="15" data-color="red"
-                    style="background: #D00; border: 2px solid #FFF;">15</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-2" data-value="2" data-color="black"
-                    style="background: #000; border: 2px solid var(--accent-avengers);">2</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-7" data-value="7" data-color="black"
-                    style="background: #000; border: 2px solid var(--accent-avengers);">7</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-12" data-value="12" data-color="black"
-                    style="background: #000; border: 2px solid var(--accent-avengers);">12</div>
-                <div class="draggable interactive" draggable="true" id="rb-node-20" data-value="20" data-color="black"
-                    style="background: #000; border: 2px solid var(--accent-avengers);">20</div>
+            <div class="bank-container" id="rb-bank">
+                <!-- Nodes populated by JS -->
+                <div class="draggable" draggable="true" data-value="10" data-color="black"
+                    style="background:black; border:2px solid var(--accent-avengers);">10</div>
+                <div class="draggable" draggable="true" data-value="5" data-color="red"
+                    style="background:#D00; border:2px solid white;">5</div>
+                <div class="draggable" draggable="true" data-value="15" data-color="red"
+                    style="background:#D00; border:2px solid white;">15</div>
+                <div class="draggable" draggable="true" data-value="2" data-color="black"
+                    style="background:black; border:2px solid var(--accent-avengers);">2</div>
+                <div class="draggable" draggable="true" data-value="7" data-color="black"
+                    style="background:black; border:2px solid var(--accent-avengers);">7</div>
+                <div class="draggable" draggable="true" data-value="12" data-color="black"
+                    style="background:black; border:2px solid var(--accent-avengers);">12</div>
+                <div class="draggable" draggable="true" data-value="20" data-color="black"
+                    style="background:black; border:2px solid var(--accent-avengers);">20</div>
             </div>
 
-            <div class="tree-layout" id="rb-tree">
-                <!-- 3 Levels for simple RB test -->
-                <div class="level">
-                    <div class="dropzone" id="rb-slot-1"></div>
-                </div>
-                <div class="level" style="gap: 8rem;">
+            <!-- Hardcoded Tree Slots for RB -->
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2rem;">
+                <div class="dropzone" id="rb-slot-1"></div>
+                <div style="display:flex; gap:8rem;">
                     <div class="dropzone" id="rb-slot-2"></div>
                     <div class="dropzone" id="rb-slot-3"></div>
                 </div>
-                <div class="level" style="gap: 2rem;">
+                <div style="display:flex; gap:2rem;">
                     <div class="dropzone" id="rb-slot-4"></div>
                     <div class="dropzone" id="rb-slot-5"></div>
                     <div class="dropzone" id="rb-slot-6"></div>
@@ -329,30 +328,36 @@
                 </div>
             </div>
 
-            <button class="btn-cyber interactive" onclick="validateRB()"
-                style="margin-top: 3rem; border-color: var(--accent-avengers); color: var(--accent-avengers);">
-                VALIDATE RB TREE
-            </button>
+            <button class="btn-action" onclick="validateRB()" style="margin-top: 2rem;">VALIDATE RB TREE</button>
         </div>
+
     </div>
 
     <!-- Result Modal -->
     <div id="result-modal" class="modal-overlay">
-        <div class="glass-card animate-on-scroll"
-            style="text-align:center; padding: 3rem; border-color: var(--accent-avengers);">
+        <div class="glass-card" style="text-align:center; padding: 3rem; border-color: var(--accent-avengers);">
             <h2 id="result-title" class="cinematic-title"></h2>
             <p id="result-msg" style="margin: 2rem 0; font-size: 1.2rem;"></p>
             <div id="action-area"></div>
         </div>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loading-overlay" class="modal-overlay">
-        <div class="spinner"></div>
+    <!-- Confirm Exit Modal -->
+    <div id="confirm-modal" class="modal-overlay">
+        <div class="glass-card" style="text-align:center; padding: 3rem; border-color: var(--accent-red-bright);">
+            <h2 class="cinematic-title" style="color:var(--accent-red-bright)">CONFIRM EXIT</h2>
+            <p style="margin: 2rem 0; font-size: 1.2rem;">Are you sure you want to finish the round?</p>
+            <p style="color: grey;">Your current score will be locked. You cannot return.</p>
+            <div style="display:flex; gap:1rem; justify-content:center; margin-top:2rem;">
+                <button class="btn-action" onclick="closeConfirm()"
+                    style="border-color:white; color:white;">CANCEL</button>
+                <button class="btn-action" onclick="confirmExit()"
+                    style="background:var(--accent-red-bright); color:black; font-weight:bold;">CONFIRM FINISH</button>
+            </div>
+        </div>
     </div>
 
     <script src="../static/js/cursor.js"></script>
-    <script src="../static/js/animations.js"></script>
     <script src="../static/js/state-manager.js"></script>
     <script src="../static/js/dsa-trees.js"></script>
     <script src="../static/js/dsa.js"></script>

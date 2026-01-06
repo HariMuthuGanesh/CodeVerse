@@ -16,15 +16,16 @@ const StateManager = {
         phase2: {
             timeRemaining: 600, // 10 minutes default
             challenges: {
-                avl: {
+                bst: {
                     completed: false,
                     score: 0,
-                    placements: {} // { "slot-id": "node-value" }
+                    attempted: 0,
+                    correct: 0
                 },
                 rb: {
                     completed: false,
                     score: 0,
-                    placements: {}
+                    placements: {} // Only for Drag Drop legacy
                 }
             }
         },
@@ -74,15 +75,16 @@ const StateManager = {
             state.phase2.challenges[challengeType] = { completed: false, score: 0, placements: {} };
         }
 
-        if (value === null) {
-            // Remove placement
-            delete state.phase2.challenges[challengeType].placements[slotId];
-        } else {
-            // Add/Update placement
-            state.phase2.challenges[challengeType].placements[slotId] = value;
+        if (state.phase2.challenges[challengeType].placements) {
+            if (value === null) {
+                // Remove placement
+                delete state.phase2.challenges[challengeType].placements[slotId];
+            } else {
+                // Add/Update placement
+                state.phase2.challenges[challengeType].placements[slotId] = value;
+            }
+            this.saveState(state);
         }
-
-        this.saveState(state);
     },
 
     /**
@@ -112,12 +114,12 @@ const StateManager = {
      */
     checkPhase3Unlock() {
         const state = this.getState();
-        const avlScore = state.phase2.challenges.avl?.score || 0;
+        const bstScore = state.phase2.challenges.bst?.score || 0;
         const rbScore = state.phase2.challenges.rb?.score || 0;
 
         // Example threshold: > 0 points to unlock Phase 3 (modify as needed)
         // User req: "Phase 3 unlocks if Minimum Phase 2 score is reached"
-        const totalScore = avlScore + rbScore;
+        const totalScore = bstScore + rbScore;
         const threshold = 10; // Arbitrary low threshold to encourage progression
 
         if (totalScore >= threshold && !state.phase3.unlocked) {

@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, session, render_template, send_from_directory, Response
+from flask import Flask, jsonify, request, session, render_template, send_from_directory, Response, redirect
 from flask_cors import CORS
 from supabase import create_client, Client
 from quiz_data import QUIZ_QUESTIONS
@@ -52,6 +52,10 @@ def quiz_page():
 
 @app.route('/dsa.html')
 def dsa_page():
+    # Check if user has exited Phase 2
+    if session.get('bst_status') == 'exited':
+         # Redirect or show message? For now let frontend handle it or redirect to phases
+         return redirect('/phases.html')
     return render_template('dsa.html')
 
 @app.route('/final.html')
@@ -87,6 +91,20 @@ def api_login():
     session['rollno'] = rollno
     session['email'] = email
     
+    # Defaults
+    session['phase1_score'] = 0
+    session['phase2_score'] = 0 # Total Phase 2 score (BST + RB)
+    session['phase3_score'] = 0
+    
+    # Phase 2 Specifics
+    session['bst_score'] = 0
+    session['bst_attempted'] = 0
+    session['bst_correct'] = 0
+    session['bst_status'] = 'locked' 
+    session['rb_score'] = 0
+    session['rb_completed'] = False
+    session['phase2_time_remaining'] = 600 # 10 minutes default
+
     # Retrieve past scores from Supabase to restore session state
     if supabase:
         try:
@@ -96,20 +114,31 @@ def api_login():
             
             if data_rows:
                 user_data = data_rows[0]
-                # Reset session scores
-                session['phase1_score'] = 0
-                session['phase2_score'] = 0
-                session['phase3_score'] = 0
-
-                # Populate based on Supabase data
+                
+                # Phase 1
                 if user_data.get('phase1_score') is not None:
                     session['phase1_score'] = user_data['phase1_score']
                     session['phase1_completed'] = True
                 
-                if user_data.get('phase2_score') is not None:
-                    session['phase2_score'] = user_data['phase2_score']
-                    session['phase2_completed'] = True
+                # Phase 2
+                # Restore granular BST data if available
+                session['bst_score'] = user_data.get('bst_score', 0)
+                session['bst_attempted'] = user_data.get('bst_attempted', 0)
+                session['bst_correct'] = user_data.get('bst_correct', 0)
+                session['bst_status'] = user_data.get('bst_status', 'locked')
+                session['rb_score'] = user_data.get('rb_score', 0)
+                session['rb_completed'] = user_data.get('rb_completed', False)
+                session['phase2_time_remaining'] = user_data.get('phase2_time_remaining', 600)
                 
+                # Total Phase 2 Score logic:
+                # If we rely on stored phase2_score, use it. Or recompute.
+                # Let's rely on granular parts if possible, or fallback.
+                p2_total = user_data.get('phase2_score')
+                if p2_total is not None:
+                    session['phase2_score'] = p2_total
+                    session['phase2_completed'] = (session['bst_status'] == 'completed' or session['bst_status'] == 'exited')
+                
+                # Phase 3
                 if user_data.get('phase3_score') is not None:
                     session['phase3_score'] = user_data['phase3_score']
                     session['phase3_completed'] = True
@@ -122,16 +151,39 @@ def api_login():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
+    bst_status = session.get('bst_status', 'locked')
+    phase1_completed = session.get('phase1_completed', False)
+    
+    # Unlock Phase 2 if Phase 1 is done
+    if phase1_completed and bst_status == 'locked':
+        bst_status = 'in_progress'
+        session['bst_status'] = 'in_progress'
+
     user_status = {
-        "phase1_completed": session.get('phase1_completed', False),
+        "phase1_completed": phase1_completed,
         "phase2_completed": session.get('phase2_completed', False),
         "phase3_completed": session.get('phase3_completed', False),
         "phase1_unlocked": True,
-        "phase2_unlocked": True,
-        "phase3_unlocked": True,
+        "phase2_unlocked": phase1_completed,
+        "phase3_unlocked": session.get('phase2_completed', False),
         "phase1_score": session.get('phase1_score', 0),
         "phase2_score": session.get('phase2_score', 0),
-        "phase3_score": session.get('phase3_score', 0)
+        "phase3_score": session.get('phase3_score', 0),
+        
+        # Detailed Phase 2 Status
+        "phase2_details": {
+            "bst": {
+                "score": session.get('bst_score', 0),
+                "attempted": session.get('bst_attempted', 0),
+                "correct": session.get('bst_correct', 0),
+                "status": bst_status
+            },
+            "rb": {
+                "score": session.get('rb_score', 0),
+                "completed": session.get('rb_completed', False)
+            },
+            "time_remaining": session.get('phase2_time_remaining', 600)
+        }
     }
     return jsonify(user_status)
 
@@ -195,12 +247,9 @@ def submit_quiz():
                 "name": session.get('username'),
                 "email": session.get('email'),
                 "phase1_score": points,
-                # we don't overwrite total_score here strictly, let's update it
                 "total_score": points + session.get('phase2_score', 0) + session.get('phase3_score', 0),
                 "created_at": datetime.utcnow().isoformat()
             }
-            # We use email as unique key if possible, but upsert usually needs a constraint.
-            # Assuming 'participants' table has a unique constraint on email.
             supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
             print(f"Supabase Error submit-quiz: {e}")
@@ -214,33 +263,110 @@ def submit_quiz():
         "results": results
     })
 
-@app.route('/api/complete-phase-2', methods=['POST'])
-def complete_phase_2():
-    data = request.json or {}
-    points = data.get('points', 50)
+# --- PHASE 2 NEW ENDPOINTS ---
+
+@app.route('/api/bst/update', methods=['POST'])
+def update_bst_score():
+    """Updates BST score per question"""
+    data = request.json
+    correct = data.get('correct', False)
+    # We just increment, logic is on frontend for which question.
+    # But safeguard: just add points if correct.
     
+    if correct:
+        session['bst_score'] = session.get('bst_score', 0) + 5
+        session['bst_correct'] = session.get('bst_correct', 0) + 1
+    
+    session['bst_attempted'] = session.get('bst_attempted', 0) + 1
+    
+    # Update Total Phase 2 Score
+    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0)
+    
+    save_phase2_progress()
+    
+    return jsonify({
+        "success": True,
+        "bst_score": session['bst_score'],
+        "total_phase2_score": session['phase2_score']
+    })
+
+@app.route('/api/rb/complete', methods=['POST'])
+def complete_rb():
+    """Completes Red-Black Tree Challenge"""
+    points = 25 # Fixed points for RB
+    session['rb_score'] = points
+    session['rb_completed'] = True
+    
+    # Update Total Phase 2 Score
+    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0)
+    
+    save_phase2_progress()
+    
+    return jsonify({
+        "success": True,
+        "rb_score": points,
+        "total_phase2_score": session['phase2_score']
+    })
+
+@app.route('/api/phase2/timer', methods=['POST'])
+def update_phase2_timer():
+    """Saves remaining time"""
+    data = request.json
+    time_remaining = data.get('time_remaining', 600)
+    session['phase2_time_remaining'] = time_remaining
+    
+    # We can optimize and not hit DB every second, but maybe on leave/pause
+    # If user just pings this periodically.
+    # Let's save to DB heavily? No, maybe just session. 
+    # But session is unreliable if server restarts. 
+    # Let's try to save to DB if it's a "pause" event or periodically.
+    
+    if data.get('save_to_db'):
+        save_phase2_progress()
+        
+    return jsonify({"success": True})
+
+@app.route('/api/phase2/exit', methods=['POST'])
+def exit_phase2():
+    """User chooses to Leave Round (Finish) or Autocomplete"""
+    session['bst_status'] = 'exited'
     session['phase2_completed'] = True
-    session['phase2_score'] = points
-    session['phase2_max_score'] = 50
     
+    save_phase2_progress()
+    
+    return jsonify({
+        "success": True,
+        "bst_status": "exited",
+        "final_phase2_score": session.get('phase2_score', 0)
+    })
+
+def save_phase2_progress():
+    """Helper to sync Phase 2 session data to Supabase"""
     if session.get('email') and supabase:
         try:
-            current_total = session.get('phase1_score', 0) + points + session.get('phase3_score', 0)
+            current_total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + session.get('phase3_score', 0)
             user_data = {
                 "name": session.get('username'),
                 "email": session.get('email'),
-                "phase2_score": points,
-                "total_score": current_total
+                "phase2_score": session.get('phase2_score', 0),
+                "total_score": current_total,
+                "bst_score": session.get('bst_score', 0),
+                "bst_attempted": session.get('bst_attempted', 0),
+                "bst_correct": session.get('bst_correct', 0),
+                "bst_status": session.get('bst_status', 'in_progress'),
+                "rb_score": session.get('rb_score', 0),
+                "rb_completed": session.get('rb_completed', False),
+                "phase2_time_remaining": session.get('phase2_time_remaining', 600)
             }
             supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
-            print(f"Supabase Error complete-phase-2: {e}")
+            print(f"Supabase Error save_phase2: {e}")
 
-    return jsonify({
-        "success": True, 
-        "message": "Phase 2 Completed. Power Stone Acquired.",
-        "points": points
-    })
+# Legacy endpoint redirect or specific handler
+@app.route('/api/complete-phase-2', methods=['POST'])
+def complete_phase_2():
+    # This might be called by old code or as a fallback
+    return exit_phase2()
 
 @app.route('/api/complete-phase-3', methods=['POST'])
 def complete_phase_3():
@@ -277,7 +403,7 @@ def get_total_score():
     phase3_score = session.get('phase3_score', 0)
     
     phase1_max = session.get('phase1_max_score', 50)
-    phase2_max = session.get('phase2_max_score', 50)
+    phase2_max = 50 # 25 RB + 25 BST (approx, 5 questions * 5 pts = 25)
     phase3_max = session.get('phase3_max_score', 100)
     
     phase3_started = session.get('phase3_started', False)
