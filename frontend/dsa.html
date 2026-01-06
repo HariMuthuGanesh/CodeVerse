@@ -266,26 +266,64 @@
 
         <!-- BST CHALLENGE UI -->
         <div id="challenge-bst" class="challenge-content active">
-            <div class="question-display" id="bst-question" style="margin-bottom: 1rem; color: white;">
-                Question 1: Insert 50
+            <div style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <h3>Hard BST Challenge</h3>
+                <p>Construct a valid Binary Search Tree using ALL the numbers below. <br>
+                    <span style="color: grey; font-size: 0.9em;">Rule: Left < Parent < Right. Deep violations are
+                            checked!</span>
+                </p>
             </div>
 
-            <!-- Visualization Area -->
-            <div class="bst-viz-container" id="bst-viz">
-                <!-- Tree rendered here dynamically -->
-                <div style="position: absolute; top: 50%; color: rgba(255,255,255,0.2);">Tree Area</div>
+            <!-- Draggable Bank -->
+            <div class="bank-container" id="bst-bank">
+                <!-- Hardcoded values for the BST Challenge -->
+                <div class="draggable" draggable="true" data-value="50"
+                    style="background:var(--accent-avengers); color:white;">50</div>
+                <div class="draggable" draggable="true" data-value="30"
+                    style="background:var(--accent-avengers); color:white;">30</div>
+                <div class="draggable" draggable="true" data-value="70"
+                    style="background:var(--accent-avengers); color:white;">70</div>
+                <div class="draggable" draggable="true" data-value="20"
+                    style="background:var(--accent-avengers); color:white;">20</div>
+                <div class="draggable" draggable="true" data-value="40"
+                    style="background:var(--accent-avengers); color:white;">40</div>
+                <div class="draggable" draggable="true" data-value="60"
+                    style="background:var(--accent-avengers); color:white;">60</div>
+                <div class="draggable" draggable="true" data-value="80"
+                    style="background:var(--accent-avengers); color:white;">80</div>
             </div>
 
-            <div class="controls-area">
-                <input type="number" id="bst-input" placeholder="Value"
-                    style="padding:0.5rem; border-radius:4px; border:none;">
-                <button class="btn-action" onclick="handleBSTAction('insert')">INSERT</button>
-                <button class="btn-action" onclick="handleBSTAction('search')">SEARCH</button>
-                <button class="btn-action" onclick="handleBSTAction('delete')">DELETE</button>
-                <button class="btn-action" onclick="handleBSTAction('inorder')">INORDER</button>
+            <!-- Dropzone Tree Structure (Fixed Depth 3: Root, 2 Children, 4 Grandchildren) = 7 Slots Matches 7 Items -->
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2rem;">
+                <!-- Level 1 -->
+                <div class="dropzone" id="bst-slot-1" data-index="1"></div>
+
+                <!-- Connector 1 -->
+                <div style="width: 200px; height: 2px; background: rgba(255,255,255,0.2);"></div>
+
+                <!-- Level 2 -->
+                <div style="display:flex; gap:12rem;">
+                    <div class="dropzone" id="bst-slot-2" data-index="2"></div>
+                    <div class="dropzone" id="bst-slot-3" data-index="3"></div>
+                </div>
+
+                <!-- Connector 2 -->
+                <div style="display:flex; gap:12rem;">
+                    <div style="width: 100px; height: 2px; background: rgba(255,255,255,0.2);"></div>
+                    <div style="width: 100px; height: 2px; background: rgba(255,255,255,0.2);"></div>
+                </div>
+
+                <!-- Level 3 -->
+                <div style="display:flex; gap:4rem;">
+                    <div class="dropzone" id="bst-slot-4" data-index="4"></div>
+                    <div class="dropzone" id="bst-slot-5" data-index="5"></div>
+                    <div style="width: 1px;"></div> <!-- Spacer -->
+                    <div class="dropzone" id="bst-slot-6" data-index="6"></div>
+                    <div class="dropzone" id="bst-slot-7" data-index="7"></div>
+                </div>
             </div>
-            <p style="margin-top: 1rem; font-size: 0.9rem; color: grey;">Use the controls to match the current/active
-                question.</p>
+
+            <button class="btn-action" onclick="validateBST()" style="margin-top: 2rem;">VALIDATE BST</button>
         </div>
 
         <!-- RED-BLACK CHALLENGE UI (Legacy Support) -->
