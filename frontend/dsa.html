@@ -226,6 +226,26 @@
             pointer-events: none;
             z-index: 0;
         }
+
+        .rb-node {
+            width: 50px;
+            height: 50px;
+            border: 2px solid white;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Orbitron';
+            color: white;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .rb-node:hover {
+            transform: scale(1.1);
+        }
     </style>
 </head>
 
@@ -276,13 +296,13 @@
             <!-- Draggable Bank -->
             <div class="bank-container" id="bst-bank">
                 <!-- Hardcoded values for the BST Challenge -->
-                <div class="draggable" draggable="true" data-value="50" id="node-50">50</div>
-                <div class="draggable" draggable="true" data-value="30" id="node-30">30</div>
-                <div class="draggable" draggable="true" data-value="70" id="node-70">70</div>
-                <div class="draggable" draggable="true" data-value="20" id="node-20">20</div>
-                <div class="draggable" draggable="true" data-value="40" id="node-40">40</div>
-                <div class="draggable" draggable="true" data-value="60" id="node-60">60</div>
-                <div class="draggable" draggable="true" data-value="80" id="node-80">80</div>
+                <div class="draggable" draggable="true" data-value="45" id="node-45">45</div>
+                <div class="draggable" draggable="true" data-value="25" id="node-25">25</div>
+                <div class="draggable" draggable="true" data-value="65" id="node-65">65</div>
+                <div class="draggable" draggable="true" data-value="15" id="node-15">15</div>
+                <div class="draggable" draggable="true" data-value="35" id="node-35">35</div>
+                <div class="draggable" draggable="true" data-value="55" id="node-55">55</div>
+                <div class="draggable" draggable="true" data-value="75" id="node-75">75</div>
             </div>
 
             <!-- Fixed Tree Slots -->
@@ -332,43 +352,66 @@
             <button class="btn-action" onclick="validateBST()" style="margin-top: 2rem;">VALIDATE & SUBMIT BST</button>
         </div>
 
-        <!-- RED-BLACK CHALLENGE UI (Legacy Support) -->
+        <!-- RED-BLACK CHALLENGE UI (New Click-to-Color) -->
         <div id="challenge-rb" class="challenge-content">
-            <div style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-                <h3>Red-Black Tree Challenge</h3>
-                <p>Color the nodes and place them correctly. Root must be BLACK. No Red-Red relationships.</p>
+            <div
+                style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; text-align:center;">
+                <h3>Red-Black Tree Balance</h3>
+                <p>Click nodes to toggle color: <span style="color:red">RED</span> / <span
+                        style="color:white">BLACK</span>.<br>
+                    <span style="color: grey; font-size: 0.9em;">Rules: 1. Root must be BLACK. 2. No Red-Red adjacency.
+                        3. Equal Black Height.</span>
+                </p>
             </div>
 
-            <div class="bank-container" id="rb-bank">
-                <!-- Nodes populated by JS -->
-                <div class="draggable" draggable="true" data-value="10" data-color="black"
-                    style="background:black; border:2px solid var(--accent-avengers);">10</div>
-                <div class="draggable" draggable="true" data-value="5" data-color="red"
-                    style="background:#D00; border:2px solid white;">5</div>
-                <div class="draggable" draggable="true" data-value="15" data-color="red"
-                    style="background:#D00; border:2px solid white;">15</div>
-                <div class="draggable" draggable="true" data-value="2" data-color="black"
-                    style="background:black; border:2px solid var(--accent-avengers);">2</div>
-                <div class="draggable" draggable="true" data-value="7" data-color="black"
-                    style="background:black; border:2px solid var(--accent-avengers);">7</div>
-                <div class="draggable" draggable="true" data-value="12" data-color="black"
-                    style="background:black; border:2px solid var(--accent-avengers);">12</div>
-                <div class="draggable" draggable="true" data-value="20" data-color="black"
-                    style="background:black; border:2px solid var(--accent-avengers);">20</div>
-            </div>
-
-            <!-- Hardcoded Tree Slots for RB -->
-            <div style="display:flex; flex-direction:column; align-items:center; gap:2rem;">
-                <div class="dropzone" id="rb-slot-1"></div>
-                <div style="display:flex; gap:8rem;">
-                    <div class="dropzone" id="rb-slot-2"></div>
-                    <div class="dropzone" id="rb-slot-3"></div>
+            <div class="bst-viz-container"
+                style="height:400px; display:flex; flex-direction:column; align-items:center;">
+                <!-- Root -->
+                <div class="tree-level">
+                    <div class="rb-node" id="rb-node-1" data-value="40" onclick="toggleColor(this)"
+                        style="background:black;">40</div>
                 </div>
-                <div style="display:flex; gap:2rem;">
-                    <div class="dropzone" id="rb-slot-4"></div>
-                    <div class="dropzone" id="rb-slot-5"></div>
-                    <div class="dropzone" id="rb-slot-6"></div>
-                    <div class="dropzone" id="rb-slot-7"></div>
+
+                <!-- Connector L1 -->
+                <svg width="200" height="40" style="margin:-15px 0;">
+                    <line x1="100" y1="0" x2="50" y2="40" stroke="white" stroke-width="2" />
+                    <line x1="100" y1="0" x2="150" y2="40" stroke="white" stroke-width="2" />
+                </svg>
+
+                <!-- L2 -->
+                <div class="tree-level" style="gap:8rem;">
+                    <div class="rb-node" id="rb-node-2" data-value="20" onclick="toggleColor(this)"
+                        style="background:black;">20</div>
+                    <div class="rb-node" id="rb-node-3" data-value="60" onclick="toggleColor(this)"
+                        style="background:black;">60</div>
+                </div>
+
+                <!-- Connector L2 -->
+                <div style="display:flex; gap:6rem;">
+                    <svg width="100" height="40" style="margin:-15px 0;">
+                        <line x1="50" y1="0" x2="25" y2="40" stroke="white" stroke-width="2" />
+                        <line x1="50" y1="0" x2="75" y2="40" stroke="white" stroke-width="2" />
+                    </svg>
+                    <svg width="100" height="40" style="margin:-15px 0;">
+                        <line x1="50" y1="0" x2="25" y2="40" stroke="white" stroke-width="2" />
+                        <line x1="50" y1="0" x2="75" y2="40" stroke="white" stroke-width="2" />
+                    </svg>
+                </div>
+
+                <!-- L3 -->
+                <div class="tree-level" style="gap:3rem;">
+                    <div style="display:flex; gap:1.5rem;">
+                        <div class="rb-node" id="rb-node-4" data-value="10" onclick="toggleColor(this)"
+                            style="background:black;">10</div>
+                        <div class="rb-node" id="rb-node-5" data-value="30" onclick="toggleColor(this)"
+                            style="background:black;">30</div>
+                    </div>
+                    <div style="display:flex; gap:1.5rem;">
+                        <div class="rb-node" id="rb-node-6" data-value="50" onclick="toggleColor(this)"
+                            style="background:black;">50</div>
+                        <div class="rb-node" id="rb-node-7" data-value="70" onclick="toggleColor(this)"
+                            style="background:black;">70</div>
+                    </div>
                 </div>
             </div>
 

@@ -79,25 +79,25 @@ function isValidBST(node, min, max) {
 }
 
 
-// 2. RB VALIDATOR (Legacy)
+// 2. RB VALIDATOR (New Fixed UI)
 function validateRBFromUI() {
-    const root = convertSlotsToTree('rb', 7);
+    const root = convertFixedRBToTree();
     if (!root) return { valid: false, error: "Root missing" };
-    if (root.color !== 'black') return { valid: false, error: "Root must be black" };
+
+    // Check Root Color
+    if (root.color !== 'black') return { valid: false, error: "Root must be BLACK." };
+
     return isValidRB(root);
 }
 
 function isValidRB(node) {
     if (!node) return { valid: true, blackHeight: 1 };
 
-    // Basic BST Check
-    // Reuse specific BST logic or basic check? Let's do basic local check + recursiveness
-    if (node.left && node.left.value >= node.value) return { valid: false, error: `Invalid BST Order: ${node.left.value} >= ${node.value}` };
-    if (node.right && node.right.value <= node.value) return { valid: false, error: `Invalid BST Order: ${node.right.value} <= ${node.value}` };
-
-    if (node.color === 'red') {
-        if ((node.left && node.left.color === 'red') || (node.right && node.right.color === 'red')) {
-            return { valid: false, error: "Red node has Red child" };
+    // Red Violation Check
+    if (node.color === 'red') { // Check Red-Red
+        if ((node.left && node.left.color === 'red') ||
+            (node.right && node.right.color === 'red')) {
+            return { valid: false, error: `Red Constraint Violated at Node ${node.value} (Red parent cannot have Red child)` };
         }
     }
 
@@ -106,11 +106,32 @@ function isValidRB(node) {
     const r = isValidRB(node.right);
     if (!r.valid) return r;
 
-    if (l.blackHeight !== r.blackHeight) return { valid: false, error: "Black height mismatch" };
+    // Black Height Check
+    if (l.blackHeight !== r.blackHeight) {
+        return {
+            valid: false,
+            error: `Black Height Violation at Node ${node.value} (Left: ${l.blackHeight}, Right: ${r.blackHeight})`
+        };
+    }
 
-    return { valid: true, blackHeight: l.blackHeight + (node.color === 'black' ? 1 : 0) };
+    // Determine current black height contribution
+    // Note: Standard definition counts black nodes on path.
+    // Null counts as black (height 1 returned above).
+    // If current is black, add 1. If red, add 0.
+    // Wait, if null returns 1 (representing a black leaf/nil), then:
+    // Leaf node (Black) -> L(1), R(1) -> Returns 1 + 1 = 2?
+    // Let's stick to standard: Count number of black nodes from node to leaf.
+    // Null is black.
+
+    // Correct logic:
+    // If I am black, my height is child_bh + 1.
+    // If I am red, my height is child_bh.
+
+    return {
+        valid: true,
+        blackHeight: l.blackHeight + (node.color === 'black' ? 1 : 0)
+    };
 }
-
 
 // --- UTILS ---
 
@@ -122,7 +143,46 @@ function getSlotValue(prefix, index) {
     return null;
 }
 
+function convertFixedRBToTree() {
+    // Fixed Structure: 1-7
+    // 1 -> 2, 3
+    // 2 -> 4, 5
+    // 3 -> 6, 7
+
+    const getNode = (id) => {
+        const el = document.getElementById(`rb-node-${id}`);
+        if (!el) return null;
+        const val = parseInt(el.dataset.value);
+        // color from style or default?
+        // Note: style.backgroundColor returns 'black', '#AA0000', 'rgb(...)', or ''
+        const bg = el.style.backgroundColor;
+        const color = (bg === 'black' || bg === '' || bg === 'rgb(0, 0, 0)') ? 'black' : 'red';
+
+        const n = new TreeNode(val);
+        n.color = color;
+        return n;
+    };
+
+    const n1 = getNode(1);
+    const n2 = getNode(2);
+    const n3 = getNode(3);
+    const n4 = getNode(4);
+    const n5 = getNode(5);
+    const n6 = getNode(6);
+    const n7 = getNode(7);
+
+    if (n1) { n1.left = n2; n1.right = n3; }
+    if (n2) { n2.left = n4; n2.right = n5; }
+    if (n3) { n3.left = n6; n3.right = n7; }
+
+    return n1;
+}
+
 function convertSlotsToTree(prefix, count) {
+    // Only used for legacy or potentially detective if needed?
+    // Detective uses validateBSTFromUI which uses getSlotValue logic manually.
+    // So this might be unused, but keeping it safe or removing if unused.
+    // Let's keep it but fixing the undefined color issue if any.
     let nodes = new Array(count + 1).fill(null);
     for (let i = 1; i <= count; i++) {
         const slot = document.getElementById(`${prefix}-slot-${i}`);
