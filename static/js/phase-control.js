@@ -11,61 +11,74 @@ async function checkPhaseStatus() {
 
 function updatePhaseUI(status) {
     if (!status) {
-        // If status fetch fails, unlock all phases by default
-        unlockAllPhases();
+        console.warn("Status fetch failed.");
         return;
     }
 
-    // Helper to update card lock state
-    const updateCard = (elementId, unlocked, completed, score = 0) => {
+    // Helper to update card state
+    const updateCard = (elementId, isUnlocked, isCompleted, score, label) => {
         const card = document.getElementById(elementId);
         if (!card) return;
 
         const btn = card.querySelector('.phase-btn');
-        
-        // Always unlock all phases
-        card.classList.remove('locked');
-        card.classList.add('unlocked');
-        if (completed) card.classList.add('completed');
+        let originalHref = btn.getAttribute('data-href');
+        if (!originalHref) {
+            originalHref = btn.getAttribute('href');
+            btn.setAttribute('data-href', originalHref);
+        }
 
-        if (btn) {
-            btn.classList.remove('btn-locked');
-            btn.removeAttribute('disabled');
-            if (completed) {
-                btn.textContent = `Completed (${score} pts) - Replay`;
+        // Reset classes
+        card.classList.remove('locked', 'unlocked', 'completed');
+        btn.classList.remove('btn-locked');
+        btn.removeAttribute('disabled');
+
+        if (isUnlocked && !isCompleted) btn.href = originalHref;
+
+        if (!isUnlocked) {
+            // LOCKED STATE
+            card.classList.add('locked');
+            btn.classList.add('btn-locked');
+            btn.setAttribute('disabled', 'true');
+            btn.textContent = 'Locked';
+            btn.removeAttribute('href');
+        } else if (isCompleted) {
+            // COMPLETED STATE
+            card.classList.add('unlocked', 'completed');
+
+            // STRICT LOCK for Phase 2
+            if (label === "Phase 2") {
+                btn.classList.add('btn-locked');
+                btn.setAttribute('disabled', 'true');
+                btn.textContent = `Completed (${score} pts)`;
+                btn.removeAttribute('href'); // Prevent re-entry
             } else {
-                btn.textContent = 'Enter Phase';
+                // Phase 1 or 3
+                btn.textContent = `Completed (${score} pts)`;
+                // Phase 1 might allow revisit to see score? 
+                // Let's keep it open or close based on requirements. 
+                // "First phase second round dont get update..." implies partial confusion.
+                // Safest to keep completed phases accessible for review unless strictly forbidden.
+                // But Phase 2 was explicitly forbidden.
             }
+        } else {
+            // ACTIVE STATE
+            card.classList.add('unlocked');
+            btn.textContent = 'Enter Phase';
         }
     };
 
-    updateCard('phase-1-card', true, status.phase1_completed, status.phase1_score || 0);
-    updateCard('phase-2-card', true, status.phase2_completed, status.phase2_score || 0);
-    updateCard('phase-3-card', true, status.phase3_completed, status.phase3_score || 0);
-}
+    // Phase 1
+    updateCard('phase-1-card', true, status.phase1_completed, status.phase1_score || 0, "Phase 1");
 
-function unlockAllPhases() {
-    ['phase-1-card', 'phase-2-card', 'phase-3-card'].forEach(id => {
-        const card = document.getElementById(id);
-        if (card) {
-            card.classList.remove('locked');
-            const btn = card.querySelector('.phase-btn');
-            if (btn) {
-                btn.classList.remove('btn-locked');
-                btn.removeAttribute('disabled');
-            }
-        }
-    });
-}
+    // Phase 2: Unlocked only if Phase 1 completed
+    const p2Completed = status.phase2_completed || (status.phase2_details && status.phase2_details.bst.status === 'exited');
+    updateCard('phase-2-card', status.phase1_completed, p2Completed, status.phase2_score || 0, "Phase 2");
 
-// Global visual effect for phase transition (optional usage)
-function unlockAnimation(element) {
-    element.animate([
-        { transform: 'scale(1)', filter: 'brightness(1)' },
-        { transform: 'scale(1.1)', filter: 'brightness(1.5)' },
-        { transform: 'scale(1)', filter: 'brightness(1)' }
-    ], {
-        duration: 500,
-        easing: 'ease-in-out'
+    // Phase 3: Unlocked if Phase 2 completed
+    updateCard('phase-3-card', status.phase2_completed, status.phase3_completed, status.phase3_score || 0, "Phase 3");
+
+    // Special CSS for Locked Overlay based on class
+    document.querySelectorAll('.phase-card.locked').forEach(c => {
+        // Ensure visual lock style
     });
 }

@@ -97,65 +97,13 @@
             padding-top: 40px;
         }
 
-        /* Simple recursive tree CSS */
-        .tree-node {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            position: relative;
-            margin: 0 10px;
-        }
-
-        .node-circle {
-            width: 40px;
-            height: 40px;
-            background: var(--accent-avengers);
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: bold;
-            color: white;
-            z-index: 2;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-
-        .node-circle.highlight {
-            background: #FFD700;
-            /* Gold for search/active */
-            color: black;
-            transform: scale(1.2);
-        }
-
-        .node-connectors {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-            position: relative;
-            /* Lines drawn via SVG or pseudo-elements heavily simplified here */
-        }
-
-        .connector-line {
-            /* Fallback or SVG logic needed. 
-               For this implementation, we might just use simple margins */
-        }
-
+        /* Control Area */
         .controls-area {
             display: flex;
             gap: 1rem;
             margin-top: 2rem;
             width: 100%;
             justify-content: center;
-        }
-
-        .bst-controls {
-            display: flex;
-            gap: 1rem;
-            background: rgba(0, 0, 0, 0.5);
-            padding: 1rem;
-            border-radius: 8px;
         }
 
         .btn-action {
@@ -173,7 +121,7 @@
             color: white;
         }
 
-        /* Legacy Dropzones for RB */
+        /* Drag & Drop Areas */
         .bank-container {
             display: flex;
             gap: 1rem;
@@ -184,6 +132,8 @@
             border-radius: 8px;
             flex-wrap: wrap;
             justify-content: center;
+            min-height: 80px;
+            /* Ensure drop target if empty */
         }
 
         .draggable {
@@ -199,6 +149,11 @@
             cursor: grab;
             box-shadow: 0 0 10px var(--accent-avengers);
             font-family: 'Orbitron';
+            z-index: 10;
+        }
+
+        .draggable.dragging {
+            opacity: 0.5;
         }
 
         .dropzone {
@@ -211,6 +166,12 @@
             align-items: center;
             transition: all 0.3s;
             background: rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .dropzone.hovered {
+            border-color: #FFD700;
+            background: rgba(255, 215, 0, 0.1);
         }
 
         /* Modals */
@@ -233,6 +194,38 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Tree Layout Lines */
+        .tree-level {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            position: relative;
+            margin-bottom: 2rem;
+        }
+
+        /* Specific gaps for perfect binary tree look */
+        .level-1 {
+            gap: 0;
+        }
+
+        .level-2 {
+            gap: 12rem;
+        }
+
+        .level-3 {
+            gap: 2rem;
+        }
+
+        .connector-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: -30px;
+            /* Adjust based on gap */
+            pointer-events: none;
+            z-index: 0;
+        }
     </style>
 </head>
 
@@ -241,11 +234,11 @@
     <div class="dsa-container">
         <!-- HUD PANEL -->
         <div class="hud-panel">
-            <div class="score-display" id="score-display">BST Score: 0</div>
+            <div class="score-display" id="score-display">Phase 2 Score: 0</div>
             <div class="timer-display" id="phase2-timer">10:00</div>
             <div>
-                <button class="btn-action" onclick="leaveRound(false)"
-                    style="border-color: #FFA500; color: #FFA500; margin-right: 1rem;">PAUSE & LEAVE</button>
+                <button class="btn-action" onclick="pauseGame()"
+                    style="border-color: #FFA500; color: #FFA500; margin-right: 1rem;">PAUSE</button>
                 <button class="btn-action" onclick="finishRound()" style="border-color: #FF0000; color: #FF0000;">FINISH
                     ROUND</button>
             </div>
@@ -255,6 +248,7 @@
         </h2>
         <p style="color: grey; margin-bottom: 2rem;">Manage the Timeline. Pause to save time. Finish to lock score.</p>
 
+        <!-- Challenge Tabs -->
         <div class="challenge-tabs">
             <button class="challenge-tab active" onclick="showChallenge('bst')" id="tab-bst">
                 Binary Search Tree
@@ -262,68 +256,80 @@
             <button class="challenge-tab" onclick="showChallenge('rb')" id="tab-rb">
                 Red-Black Tree
             </button>
+            <button class="challenge-tab" onclick="showChallenge('detective')" id="tab-detective">
+                Tree Detective (Extra)
+            </button>
         </div>
 
         <!-- BST CHALLENGE UI -->
         <div id="challenge-bst" class="challenge-content active">
-            <div style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+            <div
+                style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; text-align:center;">
                 <h3>Hard BST Challenge</h3>
-                <p>Construct a valid Binary Search Tree using ALL the numbers below. <br>
+                <p>Drag numbers to build a valid Binary Search Tree.<br>
                     <span style="color: grey; font-size: 0.9em;">Rule: Left < Parent < Right. Deep violations are
                             checked!</span>
                 </p>
+                <p style="color:#FFA500; font-size:0.8em; margin-top:5px;">Warning: Partial solutions score ZERO.</p>
             </div>
 
             <!-- Draggable Bank -->
             <div class="bank-container" id="bst-bank">
                 <!-- Hardcoded values for the BST Challenge -->
-                <div class="draggable" draggable="true" data-value="50"
-                    style="background:var(--accent-avengers); color:white;">50</div>
-                <div class="draggable" draggable="true" data-value="30"
-                    style="background:var(--accent-avengers); color:white;">30</div>
-                <div class="draggable" draggable="true" data-value="70"
-                    style="background:var(--accent-avengers); color:white;">70</div>
-                <div class="draggable" draggable="true" data-value="20"
-                    style="background:var(--accent-avengers); color:white;">20</div>
-                <div class="draggable" draggable="true" data-value="40"
-                    style="background:var(--accent-avengers); color:white;">40</div>
-                <div class="draggable" draggable="true" data-value="60"
-                    style="background:var(--accent-avengers); color:white;">60</div>
-                <div class="draggable" draggable="true" data-value="80"
-                    style="background:var(--accent-avengers); color:white;">80</div>
+                <div class="draggable" draggable="true" data-value="50" id="node-50">50</div>
+                <div class="draggable" draggable="true" data-value="30" id="node-30">30</div>
+                <div class="draggable" draggable="true" data-value="70" id="node-70">70</div>
+                <div class="draggable" draggable="true" data-value="20" id="node-20">20</div>
+                <div class="draggable" draggable="true" data-value="40" id="node-40">40</div>
+                <div class="draggable" draggable="true" data-value="60" id="node-60">60</div>
+                <div class="draggable" draggable="true" data-value="80" id="node-80">80</div>
             </div>
 
-            <!-- Dropzone Tree Structure (Fixed Depth 3: Root, 2 Children, 4 Grandchildren) = 7 Slots Matches 7 Items -->
-            <div style="display:flex; flex-direction:column; align-items:center; gap:2rem;">
-                <!-- Level 1 -->
-                <div class="dropzone" id="bst-slot-1" data-index="1"></div>
+            <!-- Fixed Tree Slots -->
+            <div style="display:flex; flex-direction:column; align-items:center;">
+                <!-- Level 1 (Root) -->
+                <div class="tree-level level-1">
+                    <div class="dropzone" id="bst-slot-1" data-index="1"></div>
+                </div>
 
-                <!-- Connector 1 -->
-                <div style="width: 200px; height: 2px; background: rgba(255,255,255,0.2);"></div>
+                <!-- Connectors Level 1-2 -->
+                <svg width="400" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                    <line x1="200" y1="0" x2="100" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    <line x1="200" y1="0" x2="300" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                </svg>
 
                 <!-- Level 2 -->
-                <div style="display:flex; gap:12rem;">
+                <div class="tree-level level-2" style="gap: 12rem;">
                     <div class="dropzone" id="bst-slot-2" data-index="2"></div>
                     <div class="dropzone" id="bst-slot-3" data-index="3"></div>
                 </div>
 
-                <!-- Connector 2 -->
-                <div style="display:flex; gap:12rem;">
-                    <div style="width: 100px; height: 2px; background: rgba(255,255,255,0.2);"></div>
-                    <div style="width: 100px; height: 2px; background: rgba(255,255,255,0.2);"></div>
+                <!-- Connectors Level 2-3 -->
+                <div style="display:flex; gap:6rem; justify-content:center; width:100%;">
+                    <svg width="200" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                        <line x1="100" y1="0" x2="50" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                        <line x1="100" y1="0" x2="150" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    </svg>
+                    <svg width="200" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                        <line x1="100" y1="0" x2="50" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                        <line x1="100" y1="0" x2="150" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    </svg>
                 </div>
 
                 <!-- Level 3 -->
-                <div style="display:flex; gap:4rem;">
-                    <div class="dropzone" id="bst-slot-4" data-index="4"></div>
-                    <div class="dropzone" id="bst-slot-5" data-index="5"></div>
-                    <div style="width: 1px;"></div> <!-- Spacer -->
-                    <div class="dropzone" id="bst-slot-6" data-index="6"></div>
-                    <div class="dropzone" id="bst-slot-7" data-index="7"></div>
+                <div class="tree-level level-3" style="gap: 6rem;">
+                    <div style="display:flex; gap:2rem;">
+                        <div class="dropzone" id="bst-slot-4" data-index="4"></div>
+                        <div class="dropzone" id="bst-slot-5" data-index="5"></div>
+                    </div>
+                    <div style="display:flex; gap:2rem;">
+                        <div class="dropzone" id="bst-slot-6" data-index="6"></div>
+                        <div class="dropzone" id="bst-slot-7" data-index="7"></div>
+                    </div>
                 </div>
             </div>
 
-            <button class="btn-action" onclick="validateBST()" style="margin-top: 2rem;">VALIDATE BST</button>
+            <button class="btn-action" onclick="validateBST()" style="margin-top: 2rem;">VALIDATE & SUBMIT BST</button>
         </div>
 
         <!-- RED-BLACK CHALLENGE UI (Legacy Support) -->
@@ -369,6 +375,74 @@
             <button class="btn-action" onclick="validateRB()" style="margin-top: 2rem;">VALIDATE RB TREE</button>
         </div>
 
+        <!-- TREE DETECTIVE CHALLENGE UI -->
+        <div id="challenge-detective" class="challenge-content">
+            <div
+                style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 2rem; text-align:center;">
+                <h3>Tree Detective (Hard)</h3>
+                <p>This BST has been sabotaged! Swap the nodes to fix the violations.<br>
+                    <span style="color: grey; font-size: 0.9em;">Look for <strong>DEEP VIOLATIONS</strong> (Valid
+                        locally, Invalid globally).</span>
+                </p>
+                <div style="margin-top: 10px;">
+                    <span
+                        style="border: 1px solid var(--accent-avengers); padding: 5px; border-radius: 4px; font-size: 0.8em; color: var(--accent-avengers);">Hint:
+                        Left < Parent < Right</span>
+                </div>
+            </div>
+
+            <!-- Detective Bank (For holding/swapping) -->
+            <div class="bank-container" id="detective-bank" style="min-height: 80px; justify-content:center;">
+                <p style="color: #666; font-size: 0.8rem; align-self: center;">Drag nodes here temporarily if needed</p>
+            </div>
+
+            <!-- Fixed Tree Slots for Detective -->
+            <div style="display:flex; flex-direction:column; align-items:center;">
+                <!-- Level 1 (Root) -->
+                <div class="tree-level level-1">
+                    <div class="dropzone" id="detective-slot-1" data-index="1"></div>
+                </div>
+
+                <!-- Connectors Level 1-2 -->
+                <svg width="400" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                    <line x1="200" y1="0" x2="100" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    <line x1="200" y1="0" x2="300" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                </svg>
+
+                <!-- Level 2 -->
+                <div class="tree-level level-2" style="gap: 12rem;">
+                    <div class="dropzone" id="detective-slot-2" data-index="2"></div>
+                    <div class="dropzone" id="detective-slot-3" data-index="3"></div>
+                </div>
+
+                <!-- Connectors Level 2-3 -->
+                <div style="display:flex; gap:6rem; justify-content:center; width:100%;">
+                    <svg width="200" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                        <line x1="100" y1="0" x2="50" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                        <line x1="100" y1="0" x2="150" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    </svg>
+                    <svg width="200" height="40" style="margin-top:-10px; margin-bottom:10px;">
+                        <line x1="100" y1="0" x2="50" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                        <line x1="100" y1="0" x2="150" y2="40" stroke="rgba(255,255,255,0.3)" stroke-width="2" />
+                    </svg>
+                </div>
+
+                <!-- Level 3 -->
+                <div class="tree-level level-3" style="gap: 6rem;">
+                    <div style="display:flex; gap:2rem;">
+                        <div class="dropzone" id="detective-slot-4" data-index="4"></div>
+                        <div class="dropzone" id="detective-slot-5" data-index="5"></div>
+                    </div>
+                    <div style="display:flex; gap:2rem;">
+                        <div class="dropzone" id="detective-slot-6" data-index="6"></div>
+                        <div class="dropzone" id="detective-slot-7" data-index="7"></div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn-action" onclick="validateDetective()" style="margin-top: 2rem;">VALIDATE & FIX</button>
+        </div>
+
     </div>
 
     <!-- Result Modal -->
@@ -391,6 +465,20 @@
                     style="border-color:white; color:white;">CANCEL</button>
                 <button class="btn-action" onclick="confirmExit()"
                     style="background:var(--accent-red-bright); color:black; font-weight:bold;">CONFIRM FINISH</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pause Modal -->
+    <div id="pause-modal" class="modal-overlay">
+        <div class="glass-card" style="text-align:center; padding: 3rem; border-color: var(--accent-avengers);">
+            <h2 class="cinematic-title" style="color:var(--accent-avengers)">GAME PAUSED</h2>
+            <p style="margin: 2rem 0; font-size: 1.2rem;">Timeline Frozen.</p>
+            <div style="display:flex; gap:1rem; justify-content:center; margin-top:2rem;">
+                <button class="btn-action" onclick="resumeGame()"
+                    style="border-color:white; color:white;">RESUME</button>
+                <button class="btn-action" onclick="saveAndExit()"
+                    style="background:var(--accent-avengers); color:black; font-weight:bold;">SAVE & EXIT</button>
             </div>
         </div>
     </div>

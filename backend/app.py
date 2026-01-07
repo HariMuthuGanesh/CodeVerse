@@ -5,6 +5,7 @@ from quiz_data import QUIZ_QUESTIONS
 import os
 import io
 import csv
+import json
 from datetime import datetime
 
 # Initialize Flask App
@@ -93,17 +94,23 @@ def api_login():
     
     # Defaults
     session['phase1_score'] = 0
-    session['phase2_score'] = 0 # Total Phase 2 score (BST + RB)
+    session['phase1_completed'] = False # Explicit Default
+    session['phase2_score'] = 0 # Total Phase 2 score (BST + RB + Detective)
     session['phase3_score'] = 0
     
     # Phase 2 Specifics
     session['bst_score'] = 0
-    session['bst_attempted'] = 0
-    session['bst_correct'] = 0
     session['bst_status'] = 'locked' 
     session['rb_score'] = 0
     session['rb_completed'] = False
+    session['detective_score'] = 0
+    session['detective_completed'] = False
     session['phase2_time_remaining'] = 600 # 10 minutes default
+    
+    # State Persistence for Drag & Drop
+    session['bst_state'] = [] # List of {slot: id, value: val}
+    session['rb_state'] = [] # List of {slot: id, value: val, color: c}
+    session['detective_state'] = [] # List of {slot: id, value: val}
 
     # Retrieve past scores from Supabase to restore session state
     if supabase:
@@ -112,27 +119,40 @@ def api_login():
             response = supabase.table('participants').select("*").eq('email', email).execute()
             data_rows = response.data
             
+            # SESSION FLAG: Mark this session as having valid DB data
+            session['db_synced'] = True
+            
             if data_rows:
                 user_data = data_rows[0]
                 
-                # Phase 1
-                if user_data.get('phase1_score') is not None:
-                    session['phase1_score'] = user_data['phase1_score']
+                # Phase 1 Restoration
+                # Check explicit status OR score > 0 (to avoid 0-default bug)
+                p1_status = user_data.get('phase1_status')
+                p1_score = user_data.get('phase1_score', 0)
+                
+                # FIX: Trust 'completed' status explicitly, even if score is 0
+                if p1_status == 'completed' or (p1_score is not None and p1_score > 0):
+                    session['phase1_score'] = p1_score
                     session['phase1_completed'] = True
+                else:
+                    session['phase1_score'] = 0
+                    session['phase1_completed'] = False
                 
                 # Phase 2
-                # Restore granular BST data if available
                 session['bst_score'] = user_data.get('bst_score', 0)
-                session['bst_attempted'] = user_data.get('bst_attempted', 0)
-                session['bst_correct'] = user_data.get('bst_correct', 0)
                 session['bst_status'] = user_data.get('bst_status', 'locked')
                 session['rb_score'] = user_data.get('rb_score', 0)
                 session['rb_completed'] = user_data.get('rb_completed', False)
+                session['detective_score'] = user_data.get('detective_score', 0)
+                session['detective_completed'] = user_data.get('detective_completed', False)
                 session['phase2_time_remaining'] = user_data.get('phase2_time_remaining', 600)
                 
+                # Restore States (JSON likely)
+                session['bst_state'] = user_data.get('bst_state', [])
+                session['rb_state'] = user_data.get('rb_state', [])
+                session['detective_state'] = user_data.get('detective_state', [])
+                
                 # Total Phase 2 Score logic:
-                # If we rely on stored phase2_score, use it. Or recompute.
-                # Let's rely on granular parts if possible, or fallback.
                 p2_total = user_data.get('phase2_score')
                 if p2_total is not None:
                     session['phase2_score'] = p2_total
@@ -143,9 +163,18 @@ def api_login():
                     session['phase3_score'] = user_data['phase3_score']
                     session['phase3_completed'] = True
             
+            # If no user found, it's a new user, which is fine. session['db_synced'] is True.
+
         except Exception as e:
             print(f"Login Supabase Error: {e}")
-            # Continue login even if DB fails, treating as new session locally
+            # CRITICAL: Do NOT continue locally if DB fetch failed.
+            # This prevents overwriting cloud data with empty local data later.
+            return jsonify({"error": "Database Unavailable. Please try again."}), 503
+    else:
+        # If Supabase is NOT configured at all on server, we might run in local-only mode
+        # But if it WAS expected, this is an issue. taking 'supabase: Client = None' as config missing.
+        # Ideally, we should warn. For now, we assume local-dev mode if no keys.
+        session['db_synced'] = False 
 
     return jsonify({"success": True})
 
@@ -174,13 +203,18 @@ def get_status():
         "phase2_details": {
             "bst": {
                 "score": session.get('bst_score', 0),
-                "attempted": session.get('bst_attempted', 0),
-                "correct": session.get('bst_correct', 0),
-                "status": bst_status
+                "status": bst_status,
+                "state": session.get('bst_state', [])
             },
             "rb": {
                 "score": session.get('rb_score', 0),
-                "completed": session.get('rb_completed', False)
+                "completed": session.get('rb_completed', False),
+                "state": session.get('rb_state', [])
+            },
+            "detective": {
+                "score": session.get('detective_score', 0),
+                "completed": session.get('detective_completed', False),
+                "state": session.get('detective_state', [])
             },
             "time_remaining": session.get('phase2_time_remaining', 600)
         }
@@ -240,19 +274,27 @@ def submit_quiz():
     session['phase1_questions_attempted'] = questions_attempted
 
     # Store in Supabase
+    # Safety Check: Only save if we have a valid synced session OR if supabase was never configured (local mode)
+    # But if supabase IS configured, we MUST have db_synced=True to write.
     if session.get('email') and supabase:
-        try:
-            # Upsert participant data
-            user_data = {
-                "name": session.get('username'),
-                "email": session.get('email'),
-                "phase1_score": points,
-                "total_score": points + session.get('phase2_score', 0) + session.get('phase3_score', 0),
-                "created_at": datetime.utcnow().isoformat()
-            }
-            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
-        except Exception as e:
-            print(f"Supabase Error submit-quiz: {e}")
+        if not session.get('db_synced', False):
+            print("Skipping Supabase Write: Session not synced with DB.")
+            # We fail silently here to not break the user experience, but we don't overwrite the DB.
+            # Ideally, we should warn user.
+        else:
+            try:
+                # Upsert participant data
+                user_data = {
+                    "name": session.get('username'),
+                    "email": session.get('email'),
+                    "phase1_score": points,
+                    "phase1_status": "completed", # Explicit status
+                    "total_score": points + session.get('phase2_score', 0) + session.get('phase3_score', 0),
+                    "created_at": datetime.utcnow().isoformat()
+                }
+                supabase.table('participants').upsert(user_data, on_conflict='email').execute()
+            except Exception as e:
+                print(f"Supabase Error submit-quiz: {e}")
 
     return jsonify({
         "score": score,
@@ -265,27 +307,52 @@ def submit_quiz():
 
 # --- PHASE 2 NEW ENDPOINTS ---
 
-@app.route('/api/bst/update', methods=['POST'])
-def update_bst_score():
-    """Updates BST score per question"""
+@app.route('/api/phase2/sync', methods=['POST'])
+def sync_phase2():
+    """Syncs Timer and Board State (BST + RB)"""
+    data = request.json
+    
+    # Timer
+    if 'time_remaining' in data:
+        session['phase2_time_remaining'] = data['time_remaining']
+        
+    # States
+    if 'bst_state' in data:
+        session['bst_state'] = data['bst_state']
+        
+    if 'rb_state' in data:
+        session['rb_state'] = data['rb_state']
+        
+    if 'detective_state' in data:
+        session['detective_state'] = data['detective_state']
+    
+    # Save to DB if requested (e.g., Pause/Leave)
+    if data.get('save_to_db'):
+        save_phase2_progress()
+        return jsonify({"success": True, "saved": True})
+        
+    return jsonify({"success": True, "saved": False})
+
+@app.route('/api/bst/submit', methods=['POST'])
+def submit_bst():
+    """Validates and Submits BST Score"""
+    
     data = request.json
     correct = data.get('correct', False)
-    # We just increment, logic is on frontend for which question.
-    # But safeguard: just add points if correct.
     
     if correct:
-        session['bst_score'] = session.get('bst_score', 0) + 5
-        session['bst_correct'] = session.get('bst_correct', 0) + 1
-    
-    session['bst_attempted'] = session.get('bst_attempted', 0) + 1
-    
-    # Update Total Phase 2 Score
-    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0)
-    
+        session['bst_score'] = 40 # High weightage (40)
+        session['bst_status'] = 'completed'
+    else:
+        session['bst_score'] = 0
+        return jsonify({"success": False, "message": "Invalid BST"})
+
+    # Update Total
+    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
     save_phase2_progress()
     
     return jsonify({
-        "success": True,
+        "success": True, 
         "bst_score": session['bst_score'],
         "total_phase2_score": session['phase2_score']
     })
@@ -293,12 +360,12 @@ def update_bst_score():
 @app.route('/api/rb/complete', methods=['POST'])
 def complete_rb():
     """Completes Red-Black Tree Challenge"""
-    points = 25 # Fixed points for RB
+    points = 40 # High weightage (40)
     session['rb_score'] = points
     session['rb_completed'] = True
     
     # Update Total Phase 2 Score
-    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0)
+    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
     
     save_phase2_progress()
     
@@ -308,23 +375,29 @@ def complete_rb():
         "total_phase2_score": session['phase2_score']
     })
 
-@app.route('/api/phase2/timer', methods=['POST'])
-def update_phase2_timer():
-    """Saves remaining time"""
+@app.route('/api/detective/submit', methods=['POST'])
+def submit_detective():
+    """Completes Tree Detective Challenge"""
     data = request.json
-    time_remaining = data.get('time_remaining', 600)
-    session['phase2_time_remaining'] = time_remaining
+    correct = data.get('correct', False)
+
+    if correct:
+        session['detective_score'] = 20 # Medium weightage (20)
+        session['detective_completed'] = True
+    else:
+        session['detective_score'] = 0
+        return jsonify({"success": False, "message": "Incorrect Fix"})
+
+    # Update Total Phase 2 Score
+    session['phase2_score'] = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
     
-    # We can optimize and not hit DB every second, but maybe on leave/pause
-    # If user just pings this periodically.
-    # Let's save to DB heavily? No, maybe just session. 
-    # But session is unreliable if server restarts. 
-    # Let's try to save to DB if it's a "pause" event or periodically.
+    save_phase2_progress()
     
-    if data.get('save_to_db'):
-        save_phase2_progress()
-        
-    return jsonify({"success": True})
+    return jsonify({
+        "success": True,
+        "detective_score": session['detective_score'],
+        "total_phase2_score": session['phase2_score']
+    })
 
 @app.route('/api/phase2/exit', methods=['POST'])
 def exit_phase2():
@@ -332,6 +405,7 @@ def exit_phase2():
     session['bst_status'] = 'exited'
     session['phase2_completed'] = True
     
+    # Final save
     save_phase2_progress()
     
     return jsonify({
@@ -343,6 +417,10 @@ def exit_phase2():
 def save_phase2_progress():
     """Helper to sync Phase 2 session data to Supabase"""
     if session.get('email') and supabase:
+        if not session.get('db_synced', False):
+            print("Skipping Phase 2 Save: Session not synced.")
+            return
+
         try:
             current_total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + session.get('phase3_score', 0)
             user_data = {
@@ -351,12 +429,15 @@ def save_phase2_progress():
                 "phase2_score": session.get('phase2_score', 0),
                 "total_score": current_total,
                 "bst_score": session.get('bst_score', 0),
-                "bst_attempted": session.get('bst_attempted', 0),
-                "bst_correct": session.get('bst_correct', 0),
                 "bst_status": session.get('bst_status', 'in_progress'),
                 "rb_score": session.get('rb_score', 0),
                 "rb_completed": session.get('rb_completed', False),
-                "phase2_time_remaining": session.get('phase2_time_remaining', 600)
+                "detective_score": session.get('detective_score', 0),
+                "detective_completed": session.get('detective_completed', False),
+                "phase2_time_remaining": session.get('phase2_time_remaining', 600),
+                "bst_state": session.get('bst_state', []),
+                "rb_state": session.get('rb_state', []),
+                "detective_state": session.get('detective_state', [])
             }
             supabase.table('participants').upsert(user_data, on_conflict='email').execute()
         except Exception as e:
@@ -403,7 +484,7 @@ def get_total_score():
     phase3_score = session.get('phase3_score', 0)
     
     phase1_max = session.get('phase1_max_score', 50)
-    phase2_max = 50 # 25 RB + 25 BST (approx, 5 questions * 5 pts = 25)
+    phase2_max = 100 # 40 BST + 40 RB + 20 Detective
     phase3_max = session.get('phase3_max_score', 100)
     
     phase3_started = session.get('phase3_started', False)

@@ -5,126 +5,95 @@
 
 class TreeNode {
     constructor(value) {
-        this.value = value;
+        this.value = parseInt(value);
         this.left = null;
         this.right = null;
         this.color = 'black'; // RB Support
-        this.highlight = false; // Viz support
     }
 }
 
-// Visualizer: Draw Tree to DOM
-// Simplistic recursive DOM renderer for the BST Visualization
-function renderTreeToDOM(root, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+// --- VALIDATION LOGIC ---
 
-    container.innerHTML = '';
-    if (!root) {
-        container.innerHTML = '<div style="position:absolute; top:50%; color:gray;">Empty Tree</div>';
-        return;
+// 1. BST VALIDATOR
+function validateBSTFromUI(prefix = 'bst') {
+    // 1. Build Tree from Slots (1-7)
+    // Structure is fixed:
+    // Slot 1 (Root) -> 2 (L), 3 (R)
+    // Slot 2 -> 4 (L), 5 (R)
+    // Slot 3 -> 6 (L), 7 (R)
+
+    // Check if empty
+    const nodes = new Array(8).fill(null); // 1-indexed for convenience
+    let count = 0;
+
+    for (let i = 1; i <= 7; i++) {
+        const el = getSlotValue(prefix, i);
+        if (el !== null) {
+            nodes[i] = new TreeNode(el);
+            count++;
+        }
     }
 
-    const treeEl = createTreeDOMRecursive(root);
-    container.appendChild(treeEl);
-}
+    if (count === 0) return { valid: false, error: "The tree is empty." };
+    if (count < 7) return { valid: false, error: "Incomplete Tree. Use all stones." };
 
-function createTreeDOMRecursive(node) {
-    if (!node) return document.createElement('div'); // spacer
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tree-node';
-
-    const circle = document.createElement('div');
-    circle.className = `node-circle ${node.highlight ? 'highlight' : ''}`;
-    circle.textContent = node.value;
-    if (node.color === 'red') {
-        circle.style.background = '#D00';
-        circle.style.border = '2px solid white';
-    } else if (node.color === 'black') {
-        circle.style.background = 'black';
-        circle.style.border = '2px solid var(--accent-avengers)';
-    } else {
-        // Standard BST node
-        circle.style.background = 'var(--accent-avengers)';
+    // Link nodes
+    // 1 -> 2, 3
+    if (nodes[1]) {
+        nodes[1].left = nodes[2];
+        nodes[1].right = nodes[3];
+    }
+    // 2 -> 4, 5
+    if (nodes[2]) {
+        nodes[2].left = nodes[4];
+        nodes[2].right = nodes[5];
+    }
+    // 3 -> 6, 7
+    if (nodes[3]) {
+        nodes[3].left = nodes[6];
+        nodes[3].right = nodes[7];
     }
 
-    wrapper.appendChild(circle);
+    // STRICT VALIDATION
+    // Must respect Min/Max constraints from ancestors
+    return isValidBST(nodes[1], -Infinity, Infinity);
+}
 
-    if (node.left || node.right) {
-        const childrenContainer = document.createElement('div');
-        childrenContainer.style.display = 'flex';
-        childrenContainer.style.marginTop = '20px';
-        childrenContainer.style.gap = '20px';
-        childrenContainer.style.borderTop = '2px solid rgba(255,255,255,0.2)'; // Simple connector line
+function isValidBST(node, min, max) {
+    if (!node) return { valid: true };
 
-        childrenContainer.appendChild(createTreeDOMRecursive(node.left));
-        childrenContainer.appendChild(createTreeDOMRecursive(node.right));
-
-        wrapper.appendChild(childrenContainer);
+    if (node.value <= min || node.value >= max) {
+        return {
+            valid: false,
+            error: `Violation: Node ${node.value} must be between ${min === -Infinity ? '-∞' : min} and ${max === Infinity ? '∞' : max}`
+        };
     }
 
-    return wrapper;
-}
+    const l = isValidBST(node.left, min, node.value);
+    if (!l.valid) return l;
 
-// --- UTILS ---
+    const r = isValidBST(node.right, node.value, max);
+    if (!r.valid) return r;
 
-function insertBST(root, value) {
-    if (!root) return new TreeNode(value);
-    if (value < root.value) root.left = insertBST(root.left, value);
-    else if (value > root.value) root.right = insertBST(root.right, value);
-    return root;
-}
-
-function searchBST(root, value) {
-    if (!root || root.value == value) return root;
-    if (value < root.value) return searchBST(root.left, value);
-    return searchBST(root.right, value);
-}
-
-function getMin(node) {
-    while (node.left) node = node.left;
-    return node;
-}
-
-function deleteBST(root, value) {
-    if (!root) return root;
-
-    if (value < root.value) root.left = deleteBST(root.left, value);
-    else if (value > root.value) root.right = deleteBST(root.right, value);
-    else {
-        // Node found
-        if (!root.left) return root.right;
-        if (!root.right) return root.left;
-
-        let temp = getMin(root.right);
-        root.value = temp.value;
-        root.right = deleteBST(root.right, temp.value);
-    }
-    return root;
-}
-
-function inorderBST(root, res = []) {
-    if (!root) return res;
-    inorderBST(root.left, res);
-    res.push(root.value);
-    inorderBST(root.right, res);
-    return res;
+    return { valid: true };
 }
 
 
-// --- VALIDATION (Legacy/RB) ---
-
-function isValidBST(node, min = -Infinity, max = Infinity) {
-    if (!node) return true;
-    if (node.value <= min || node.value >= max) return false;
-    return isValidBST(node.left, min, node.value) && isValidBST(node.right, node.value, max);
+// 2. RB VALIDATOR (Legacy)
+function validateRBFromUI() {
+    const root = convertSlotsToTree('rb', 7);
+    if (!root) return { valid: false, error: "Root missing" };
+    if (root.color !== 'black') return { valid: false, error: "Root must be black" };
+    return isValidRB(root);
 }
 
 function isValidRB(node) {
     if (!node) return { valid: true, blackHeight: 1 };
 
-    if (!isValidBST(node)) return { valid: false, error: "Not a BST" };
+    // Basic BST Check
+    // Reuse specific BST logic or basic check? Let's do basic local check + recursiveness
+    if (node.left && node.left.value >= node.value) return { valid: false, error: `Invalid BST Order: ${node.left.value} >= ${node.value}` };
+    if (node.right && node.right.value <= node.value) return { valid: false, error: `Invalid BST Order: ${node.right.value} <= ${node.value}` };
 
     if (node.color === 'red') {
         if ((node.left && node.left.color === 'red') || (node.right && node.right.color === 'red')) {
@@ -142,11 +111,19 @@ function isValidRB(node) {
     return { valid: true, blackHeight: l.blackHeight + (node.color === 'black' ? 1 : 0) };
 }
 
-// Helper to convert slots back to tree (for RB legacy challenge)
-function convertSlotsToTree(prefix, count) {
-    // Array rep 1-based
-    let nodes = new Array(count + 1).fill(null);
 
+// --- UTILS ---
+
+function getSlotValue(prefix, index) {
+    const slot = document.getElementById(`${prefix}-slot-${index}`);
+    if (slot && slot.children.length > 0) {
+        return parseInt(slot.children[0].dataset.value);
+    }
+    return null;
+}
+
+function convertSlotsToTree(prefix, count) {
+    let nodes = new Array(count + 1).fill(null);
     for (let i = 1; i <= count; i++) {
         const slot = document.getElementById(`${prefix}-slot-${i}`);
         if (slot && slot.children.length > 0) {
@@ -158,35 +135,20 @@ function convertSlotsToTree(prefix, count) {
             nodes[i] = n;
         }
     }
-
-    // Link
     for (let i = 1; i <= count; i++) {
         if (nodes[i]) {
             if (2 * i <= count) nodes[i].left = nodes[2 * i];
             if (2 * i + 1 <= count) nodes[i].right = nodes[2 * i + 1];
         }
     }
-
     return nodes[1];
 }
 
-function validateRBFromUI() {
-    // Check Root
-    const root = convertSlotsToTree('rb', 7);
-    if (!root) return { valid: false, error: "Root missing" };
-    if (root.color !== 'black') return { valid: false, error: "Root must be black" };
-    return isValidRB(root);
-}
-
-// Export for usage if needed (though we just load script globally)
+// Export
 if (typeof window !== 'undefined') {
     window.DSATree = {
         TreeNode,
-        insertBST,
-        searchBST,
-        deleteBST,
-        inorderBST,
-        renderTreeToDOM,
+        validateBSTFromUI,
         validateRBFromUI
     };
 }
