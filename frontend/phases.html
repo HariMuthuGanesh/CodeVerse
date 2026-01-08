@@ -114,15 +114,12 @@
             const status = await checkPhaseStatus();
             updatePhaseUI(status);
         }
-        
+
         document.addEventListener('DOMContentLoaded', async () => {
             await refreshPhaseStatus();
-            
-            // Refresh status every 2 seconds to catch Phase 2 completion
-            setInterval(refreshPhaseStatus, 2000);
         });
-        
-        // Also refresh when page becomes visible (user returns from Phase 2)
+
+        // Refresh when page becomes visible (user returns from Phase 2)
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden) {
                 refreshPhaseStatus();

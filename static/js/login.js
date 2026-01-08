@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+using5 document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('login-form');
 
     if (loginForm) {
@@ -39,6 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             phase3_completed: data.phase3_completed
                         });
                         
+                        // Add a cinematic exit effect
+                        const btn = loginForm.querySelector('button[type="submit"]');
+                        btn.innerHTML = "ACCESS GRANTED";
+                        btn.style.borderColor = "#00ff00";
+                        btn.style.boxShadow = "0 0 20px #00ff00";
+
                         // Add a cinematic exit effect
                         const btn = loginForm.querySelector('button[type="submit"]');
                         btn.innerHTML = "ACCESS GRANTED";

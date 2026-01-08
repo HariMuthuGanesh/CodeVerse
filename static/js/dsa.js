@@ -64,13 +64,9 @@ function lockPhase() {
 
 // --- STATE MANAGEMENT ---
 
-let saveTimeout = null;
 function requestAutoSave() {
-    // Debounce save
-    if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-        saveState();
-    }, 2000);
+    // Save immediately without debouncing
+    saveState();
 }
 
 async function saveState() {
