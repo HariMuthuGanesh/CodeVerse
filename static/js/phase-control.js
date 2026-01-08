@@ -15,6 +15,9 @@ function updatePhaseUI(status) {
         return;
     }
 
+    // CRITICAL: Scores only visible after Phase 3 completion
+    const scoresVisible = status.phase3_completed === true;
+
     // Helper to update card state
     const updateCard = (elementId, isUnlocked, isCompleted, score, label) => {
         const card = document.getElementById(elementId);
@@ -44,21 +47,24 @@ function updatePhaseUI(status) {
         } else if (isCompleted) {
             // COMPLETED STATE
             card.classList.add('unlocked', 'completed');
-
+            
             // STRICT LOCK for Phase 2
             if (label === "Phase 2") {
                 btn.classList.add('btn-locked');
                 btn.setAttribute('disabled', 'true');
-                btn.textContent = `Completed (${score} pts)`;
+                if (scoresVisible) {
+                    btn.textContent = `Completed (${score} pts)`;
+                } else {
+                    btn.textContent = `Completed`;
+                }
                 btn.removeAttribute('href'); // Prevent re-entry
             } else {
                 // Phase 1 or 3
-                btn.textContent = `Completed (${score} pts)`;
-                // Phase 1 might allow revisit to see score? 
-                // Let's keep it open or close based on requirements. 
-                // "First phase second round dont get update..." implies partial confusion.
-                // Safest to keep completed phases accessible for review unless strictly forbidden.
-                // But Phase 2 was explicitly forbidden.
+                if (scoresVisible) {
+                    btn.textContent = `Completed (${score} pts)`;
+                } else {
+                    btn.textContent = `Completed`;
+                }
             }
         } else {
             // ACTIVE STATE
@@ -67,19 +73,22 @@ function updatePhaseUI(status) {
         }
     };
 
-    // Phase 1
-    updateCard('phase-1-card', true, status.phase1_completed, status.phase1_score || 0, "Phase 1");
+    // Phase 1: Always unlocked, but hide score until Phase 3 complete
+    const phase1Score = scoresVisible ? (status.phase1_score || 0) : 0;
+    updateCard('phase-1-card', true, status.phase1_completed, phase1Score, "Phase 1");
 
     // Phase 2: Unlocked only if Phase 1 completed
-    const p2Completed = status.phase2_completed || (status.phase2_details && status.phase2_details.bst.status === 'exited');
-    updateCard('phase-2-card', status.phase1_completed, p2Completed, status.phase2_score || 0, "Phase 2");
+    const p2Completed = status.phase2_completed === true;
+    const phase2Score = scoresVisible ? (status.phase2_score || 0) : 0;
+    updateCard('phase-2-card', status.phase1_completed, p2Completed, phase2Score, "Phase 2");
 
     // Phase 3: Unlocked ONLY if Phase 2 completed (locked until Phase 2 is done)
     const phase3Unlocked = status.phase2_completed === true;
-    updateCard('phase-3-card', phase3Unlocked, status.phase3_completed, status.phase3_score || 0, "Phase 3");
+    const phase3Score = scoresVisible ? (status.phase3_score || 0) : 0;
+    updateCard('phase-3-card', phase3Unlocked, status.phase3_completed, phase3Score, "Phase 3");
     
     // Log for debugging
-    console.log('[PHASE CONTROL] Phase 2 completed:', status.phase2_completed, 'Phase 3 unlocked:', phase3Unlocked);
+    console.log('[PHASE CONTROL] Phase 2 completed:', status.phase2_completed, 'Phase 3 unlocked:', phase3Unlocked, 'Scores visible:', scoresVisible);
 
     // Special CSS for Locked Overlay based on class
     document.querySelectorAll('.phase-card.locked').forEach(c => {

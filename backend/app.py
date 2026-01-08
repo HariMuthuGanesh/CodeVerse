@@ -218,10 +218,10 @@ def api_login():
                 session['phase2_score'] = row.get('phase2_score') or 0
                 session['phase3_score'] = row.get('phase3_score') or 0
                 
-                # Derive phase completion from DB only (score is not None means completed)
-                phase1_completed = row.get('phase1_score') is not None and row.get('phase1_score', 0) > 0
-                phase2_completed = row.get('phase2_score') is not None and row.get('phase2_score', 0) > 0
-                phase3_completed = row.get('phase3_score') is not None and row.get('phase3_score', 0) > 0
+                # Derive phase completion from DB only (IS NOT NULL means completed)
+                phase1_completed = row.get('phase1_score') is not None
+                phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
+                phase3_completed = row.get('phase3_score') is not None
                 
                 session['phase1_completed'] = phase1_completed
                 session['phase2_completed'] = phase2_completed
@@ -270,11 +270,12 @@ def submit_quiz():
     answers = data.get('answers', {})
     score = 0
     
+    # Each question = 5 marks, max 5 questions = 25 marks total
     for q in QUIZ_QUESTIONS:
         if answers.get(str(q['id'])) == q['answer']:
             score += 5
     
-    app.logger.info(f"[PHASE1] Submission for email={email}, score={score}")
+    app.logger.info(f"[PHASE1] Submission for email={email}, score={score} out of 25")
     
     session['phase1_score'] = score
     session['phase1_completed'] = True
@@ -306,14 +307,13 @@ def submit_quiz():
     app.logger.info(f"[PHASE1] Successfully saved score={score} for email={email}")
     
     # MANDATORY: Unlock Phase 2 ONLY if DB write succeeds
-    total_questions = len(QUIZ_QUESTIONS)
+    # DO NOT show score to user - score visibility only after Phase 3 completion
     return jsonify({
         "success": True,
-        "score": score // 5,  # Number of correct answers
-        "total": total_questions,
         "phase1_completed": True,
         "phase2_completed": False,  # Phase 2 unlocks after Phase 1
-        "phase3_completed": session.get('phase3_completed', False)
+        "phase3_completed": session.get('phase3_completed', False),
+        "message": "Phase 1 completed. Score will be revealed after completing all phases."
     })
 
 # --- PHASE 2 CORE ---
@@ -473,10 +473,10 @@ def submit_bst():
 
 def validate_detective_logic(slots):
     """
-    Tree Detective: Require detecting MULTIPLE violations.
-    The broken tree has 2 violations:
-    - Node 60 is in left subtree but > root (50)
-    - Node 40 is in right subtree but < root (50)
+    Tree Detective: Require detecting MULTIPLE DEEP (global) violations.
+    The broken tree has MULTIPLE violations:
+    - Deep BST violations that are valid locally but invalid globally
+    - Multiple nodes in wrong subtrees causing cascade violations
     """
     try:
         nodes = {int(k): int(v) for k, v in slots.items() if v}
@@ -484,18 +484,9 @@ def validate_detective_logic(slots):
         return False, "Invalid Data", 0
 
     if len(nodes) < 7:
-        return False, "Incomplete Tree", 0
+        return False, "Incomplete Tree. All 7 nodes must be placed.", 0
 
-    # Expected correct structure: 50, 30, 70, 20, 40, 60, 80
-    # Broken structure has: 50, 30, 70, 20, 60, 40, 80
-    # Violations:
-    # 1. Node 60 (slot 5) is right child of 30, but 60 > 50 (root) - should be in right subtree
-    # 2. Node 40 (slot 6) is left child of 70, but 40 < 50 (root) - should be in left subtree
-    
-    violations_found = 0
-    violations_expected = 2
-    
-    # Check if tree is valid BST
+    # Check if tree is valid BST - if valid, no violations
     def is_bst(idx, min_val, max_val):
         if idx not in nodes:
             return True
@@ -508,42 +499,38 @@ def validate_detective_logic(slots):
     if is_bst(1, float('-inf'), float('inf')):
         return False, "No violations detected. Tree is valid BST.", 0
     
-    # Count violations by checking each node
+    # Count DEEP violations by checking global BST property
+    # Must find violations that are valid locally but invalid globally
+    violations_found = 0
+    violations_expected = 2  # Must find at least 2 violations
+    
     root_val = nodes.get(1)
-    if root_val:
-        # Check left subtree violations
-        if 2 in nodes:  # Left child
-            left_val = nodes[2]
-            if left_val >= root_val:
-                violations_found += 1
-        if 4 in nodes:  # Left-left
-            ll_val = nodes[4]
-            if ll_val >= root_val:
-                violations_found += 1
-        if 5 in nodes:  # Left-right
-            lr_val = nodes[5]
-            if lr_val >= root_val:
-                violations_found += 1
+    if not root_val:
+        return False, "Root node missing", 0
+    
+    # Check each node against its ancestor constraints
+    def check_violation(idx, min_val, max_val, depth=0):
+        if idx not in nodes:
+            return 0
+        val = nodes[idx]
+        violations = 0
         
-        # Check right subtree violations
-        if 3 in nodes:  # Right child
-            right_val = nodes[3]
-            if right_val <= root_val:
-                violations_found += 1
-        if 6 in nodes:  # Right-left
-            rl_val = nodes[6]
-            if rl_val <= root_val:
-                violations_found += 1
-        if 7 in nodes:  # Right-right
-            rr_val = nodes[7]
-            if rr_val <= root_val:
-                violations_found += 1
+        # Check if node violates global constraint
+        if not (min_val < val < max_val):
+            violations += 1
+        
+        # Recursively check children
+        violations += check_violation(2*idx, min_val, val, depth+1)
+        violations += check_violation(2*idx+1, val, max_val, depth+1)
+        return violations
+    
+    violations_found = check_violation(1, float('-inf'), float('inf'))
     
     # Must detect at least 2 violations
     if violations_found >= violations_expected:
-        return True, f"Detected {violations_found} violation(s). Tree fixed!", violations_found
+        return True, f"Detected {violations_found} deep violation(s). Tree fixed!", violations_found
     else:
-        return False, f"Only detected {violations_found} violation(s). Need to find {violations_expected} violations.", violations_found
+        return False, f"Only detected {violations_found} violation(s). Need to find at least {violations_expected} deep violations.", violations_found
 
 @app.route('/api/detective/submit', methods=['POST'])
 def submit_detective():
@@ -729,17 +716,10 @@ def get_status():
                 phase2_score = row.get('phase2_score') or 0
                 phase3_score = row.get('phase3_score') or 0
                 
-                # Derive phase completion from DB only
-                # Phase 1: completed if score exists and > 0
-                phase1_completed = row.get('phase1_score') is not None and phase1_score > 0
-                
-                # Phase 2: completed if phase2_completed flag is True OR score exists and > 0
-                phase2_completed = row.get('phase2_completed', False)
-                if not phase2_completed:
-                    phase2_completed = row.get('phase2_score') is not None and phase2_score > 0
-                
-                # Phase 3: completed if score exists and > 0
-                phase3_completed = row.get('phase3_score') is not None and phase3_score > 0
+                # Derive phase completion from DB only (IS NOT NULL means completed)
+                phase1_completed = row.get('phase1_score') is not None
+                phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
+                phase3_completed = row.get('phase3_score') is not None
                 
                 # Update session to keep in sync
                 session['phase1_completed'] = phase1_completed
@@ -771,16 +751,61 @@ def get_status():
     
 @app.route('/api/get-total-score', methods=['GET'])
 def get_total_score():
-    # Helper to return formatted scores
-    p1 = session.get('phase1_score', 0)
-    p2 = session.get('phase2_score', 0)
-    p3 = session.get('phase3_score', 0)
-    total = p1 + p2 + p3
+    """
+    Get total score from Supabase.
+    CRITICAL: Only show scores if phase3_score IS NOT NULL.
+    """
+    email = session.get('user_email')
+    if not email:
+        return jsonify({
+            "phase1_score": 0,
+            "phase2_score": 0,
+            "phase3_score": None,
+            "total_score": 0,
+            "scores_visible": False
+        })
+    
+    # Fetch from Supabase - DB is source of truth
+    phase1_score = 0
+    phase2_score = 0
+    phase3_score = None
+    scores_visible = False
+    
+    try:
+        if supabase:
+            res = supabase.table('participants').select('phase1_score, phase2_score, phase3_score, total_score').eq('email', email).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                phase1_score = row.get('phase1_score') or 0
+                phase2_score = row.get('phase2_score') or 0
+                phase3_score = row.get('phase3_score')
+                total_score = row.get('total_score') or 0
+                
+                # CRITICAL RULE: Scores visible ONLY if phase3_score IS NOT NULL
+                scores_visible = phase3_score is not None
+                
+                # Update session
+                session['phase1_score'] = phase1_score
+                session['phase2_score'] = phase2_score
+                session['phase3_score'] = phase3_score
+                session['phase3_completed'] = (phase3_score is not None)
+                
+                app.logger.info(f"[SCORE] Fetched scores for {email} - Phase3: {phase3_score}, Visible: {scores_visible}")
+    except Exception as e:
+        app.logger.error(f"[SCORE] Error fetching scores: {str(e)}")
+        phase1_score = session.get('phase1_score', 0)
+        phase2_score = session.get('phase2_score', 0)
+        phase3_score = session.get('phase3_score')
+        scores_visible = (phase3_score is not None)
+    
+    total = phase1_score + phase2_score + (phase3_score or 0)
+    
     return jsonify({
-        "phase1_score": p1,
-        "phase2_score": p2,
-        "phase3_score": p3,
-        "total_score": total
+        "phase1_score": phase1_score,
+        "phase2_score": phase2_score,
+        "phase3_score": phase3_score,
+        "total_score": total,
+        "scores_visible": scores_visible
     })
 
 if __name__ == '__main__':

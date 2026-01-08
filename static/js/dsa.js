@@ -346,7 +346,8 @@ function displayResult(title, msg, success) {
 }
 
 function updateScoreDisplay(val) {
-    document.getElementById('score-display').textContent = `Phase 2 Score: ${val}`;
+    // DO NOT show score - scores only visible after Phase 3 completion
+    document.getElementById('score-display').textContent = `Phase 2: In Progress`;
 }
 
 // --- HELPERS (API) ---
@@ -436,17 +437,22 @@ function initBrokenTree() {
     const s1 = document.getElementById('detective-slot-1');
     if (s1 && s1.children.length > 0) return; // Already populated
 
+    // More complex broken tree with MULTIPLE deep violations
+    // Correct structure should be: 50, 30, 70, 20, 40, 60, 80
+    // Broken structure with MULTIPLE violations:
     const config = [
-        { slot: 1, val: 50, id: 'd-node-50' },
-        { slot: 2, val: 30, id: 'd-node-30' },
-        { slot: 3, val: 70, id: 'd-node-70' },
-        { slot: 4, val: 20, id: 'd-node-20' },
-        { slot: 5, val: 60, id: 'd-node-60' }, // ERROR: 60 > 50 (Root), should be right of 50. But it's in left subtree (child of 30, right child). 30->60. 60>30 ok. But 60 > 50 (grandparent). Violation!
-        { slot: 6, val: 40, id: 'd-node-40' }, // ERROR: 40 < 50. In right subtree (child of 70). 70->40. 40<70 ok. But 40 < 50 (grandprant). Violation!
-        { slot: 7, val: 80, id: 'd-node-80' }
+        { slot: 1, val: 50, id: 'd-node-50' },  // Root: 50
+        { slot: 2, val: 30, id: 'd-node-30' },  // Left child: 30 (OK: 30 < 50)
+        { slot: 3, val: 35, id: 'd-node-35' },  // VIOLATION 1: Right child is 35, but 35 < 50 (should be > 50)
+        { slot: 4, val: 55, id: 'd-node-55' },  // VIOLATION 2: Left-left is 55, but 55 > 50 and 55 > 30 (should be < 30)
+        { slot: 5, val: 60, id: 'd-node-60' },  // VIOLATION 3: Left-right is 60, but 60 > 50 (should be between 30 and 50)
+        { slot: 6, val: 25, id: 'd-node-25' },  // VIOLATION 4: Right-left is 25, but 25 < 35 and 25 < 50 (should be > 35 if right of root)
+        { slot: 7, val: 45, id: 'd-node-45' }   // VIOLATION 5: Right-right is 45, but 45 < 50 (should be > 35 and > 50)
     ];
-    // This creates "Deep Violations" as requested.
-    // 60 is right child of 30. Valid local (60>30). Invalid global (60 > 50, but in Left subtree).
+    // This creates MULTIPLE deep violations:
+    // - Nodes in wrong subtrees causing cascade violations
+    // - Violations that are valid locally but invalid globally
+    // - Deep BST property violations
 
     const bank = document.getElementById('detective-bank');
     if (bank) bank.innerHTML = '<p style="color: #666; font-size: 0.8rem; align-self: center;">Drag nodes here temporarily if needed</p>';

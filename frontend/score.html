@@ -114,12 +114,12 @@
             
             <div class="phase-score">
                 <span class="phase-name">Phase 1: Quiz Challenge</span>
-                <span class="phase-points" id="phase1-display">0/50</span>
+                <span class="phase-points" id="phase1-display">0/25</span>
             </div>
             
             <div class="phase-score">
                 <span class="phase-name">Phase 2: DSA Challenge</span>
-                <span class="phase-points" id="phase2-display">0/50</span>
+                <span class="phase-points" id="phase2-display">0/100</span>
             </div>
             
             <div class="phase-score">
@@ -148,25 +148,59 @@
                 const response = await fetch('/api/get-total-score');
                 const data = await response.json();
 
-                // Update phase displays
-                document.getElementById('phase1-display').textContent = `${data.phase1_score}/${data.phase1_max}`;
-                document.getElementById('phase2-display').textContent = `${data.phase2_score}/${data.phase2_max}`;
-                document.getElementById('phase3-display').textContent = `${data.phase3_score}/${data.phase3_max}`;
+                // CRITICAL: Only show scores if phase3_score IS NOT NULL
+                if (!data.scores_visible || data.phase3_score === null) {
+                    // Hide all scores and show message
+                    document.getElementById('phase1-display').textContent = 'Hidden';
+                    document.getElementById('phase2-display').textContent = 'Hidden';
+                    document.getElementById('phase3-display').textContent = 'Hidden';
+                    document.getElementById('total-display').textContent = 'Hidden';
+                    document.getElementById('percentage-display').textContent = 'Complete all phases to view your score.';
+                    
+                    // Update title and message
+                    const title = document.querySelector('.cinematic-title');
+                    if (title) {
+                        title.textContent = 'SCORE HIDDEN';
+                        title.style.color = 'var(--text-secondary)';
+                    }
+                    
+                    const badge = document.querySelector('.avengers-badge');
+                    if (badge) {
+                        badge.textContent = '🔒';
+                    }
+                    
+                    const card = document.querySelector('.glass-card.score-card');
+                    if (card) {
+                        const msg = document.createElement('div');
+                        msg.style.cssText = 'text-align: center; padding: 2rem; color: var(--text-secondary); font-size: 1.2rem; margin-top: 2rem;';
+                        msg.textContent = 'Score will be revealed after completing all phases.';
+                        card.appendChild(msg);
+                    }
+                    return;
+                }
 
-                // Update total
-                document.getElementById('total-display').textContent = `${data.total_score}/${data.total_max}`;
-                document.getElementById('percentage-display').textContent = `${data.percentage}% Complete`;
+                // Scores are visible - show all scores
+                // Phase 1: max 25, Phase 2: max 100, Phase 3: max 100, Total: max 225
+                document.getElementById('phase1-display').textContent = `${data.phase1_score}/25`;
+                document.getElementById('phase2-display').textContent = `${data.phase2_score}/100`;
+                document.getElementById('phase3-display').textContent = `${data.phase3_score}/100`;
+                
+                const totalMax = 225; // 25 + 100 + 100
+                document.getElementById('total-display').textContent = `${data.total_score}/${totalMax}`;
+                
+                const percentage = Math.round((data.total_score / totalMax) * 100);
+                document.getElementById('percentage-display').textContent = `${percentage}% Complete`;
 
                 // Animate score counting
-                animateScore('total-display', data.total_score, data.total_max);
+                animateScore('total-display', data.total_score, totalMax);
             } catch (error) {
                 console.error('Failed to load scores:', error);
                 // Set defaults if API fails
-                document.getElementById('phase1-display').textContent = '0/50';
-                document.getElementById('phase2-display').textContent = '0/50';
-                document.getElementById('phase3-display').textContent = '0/100';
-                document.getElementById('total-display').textContent = '0/200';
-                document.getElementById('percentage-display').textContent = '0%';
+                document.getElementById('phase1-display').textContent = 'Error loading scores';
+                document.getElementById('phase2-display').textContent = 'Error loading scores';
+                document.getElementById('phase3-display').textContent = 'Error loading scores';
+                document.getElementById('total-display').textContent = 'Error loading scores';
+                document.getElementById('percentage-display').textContent = 'Error loading scores';
             }
         }
 
@@ -174,11 +208,11 @@
             const element = document.getElementById(elementId);
             let current = 0;
             const increment = target / 50;
-            const timer = setInterval(() => {
+            const intervalId = setInterval(() => {
                 current += increment;
                 if (current >= target) {
                     current = target;
-                    clearInterval(timer);
+                    clearInterval(intervalId);
                 }
                 element.textContent = `${Math.floor(current)}/${max}`;
             }, 30);

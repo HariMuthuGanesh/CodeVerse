@@ -304,15 +304,13 @@ function showResult(result) {
 
     modal.classList.add('active');
 
-    const points = result.points || (result.score * 5); // 5 points per correct answer
-    const totalPoints = result.max_points || 50; // 50 points max
-
-    // Always allow users to proceed - no restrictions
-    const questionsAttempted = Object.keys(userAnswers).length;
-    
+    // CRITICAL: DO NOT show marks until Phase 3 is completed
+    // Score visibility only after completing all phases
     title.innerHTML = "PHASE 1 COMPLETE <span style='color:var(--accent-avengers)'>✓</span>";
     title.style.color = "var(--accent-avengers)";
-    msg.innerHTML = `Score: ${result.score}/${result.total} | Points: ${points}/${totalPoints}<br>Questions Attempted: ${questionsAttempted}/${result.total}<br>Phase completed! You can proceed to the next challenge.`;
+    
+    // Show message without revealing score
+    msg.innerHTML = `Phase 1 completed successfully!<br><br><span style="color: var(--text-secondary); font-size: 0.9em;">Score will be revealed after completing all phases.</span><br><br>You can proceed to Phase 2.`;
     actionArea.innerHTML = `<a href="phases.html" class="btn-cyber">PROCEED TO NEXT PHASE</a>`;
     
     // CRITICAL: Unlock Phase 2 immediately based on API response (DB-driven)
