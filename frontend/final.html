@@ -233,6 +233,13 @@
         }
 
         function engageEndgame() {
+            // Show confirmation dialog before redirecting to HackerRank
+            const confirmed = confirm('Are you ready to proceed to HackerRank? This will start Phase 3 timer.\n\nClick OK to continue or Cancel to stay on this page.');
+            
+            if (!confirmed) {
+                return; // User cancelled, don't proceed
+            }
+            
             // 1. Close Modal
             closeStep2();
 
@@ -247,7 +254,7 @@
             // 3. Start UI Timer
             initPhase3State();
 
-            // 4. Redirect
+            // 4. Redirect to HackerRank
             window.open(HACKERRANK_URL, '_blank');
         }
 

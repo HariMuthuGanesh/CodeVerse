@@ -2,12 +2,13 @@
 // Handles BST Game, RB Challenge, Tree Detective (Extra), Timer, and API interactions
 
 let phase2Timer = null;
-let timeRemaining = 900; // Default 15m
+let timeRemaining = 900; // 15 minutes = 900 seconds (persistent across refresh)
 let phaseStartedAt = null; // Date object
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initPhase2();
     initDragAndDrop();
+    initRBColorDragDrop();
 });
 
 async function initPhase2() {
@@ -87,7 +88,7 @@ function updateTimerLogic() {
     // phaseStartedAt was constructed from server string.
 
     const diff = (now - phaseStartedAt) / 1000; // seconds
-    const remaining = 900 - Math.floor(diff);
+    const remaining = 900 - Math.floor(diff); // 15 minutes = 900 seconds
 
     timeRemaining = Math.max(0, remaining);
     updateTimerDisplay();
@@ -460,12 +461,13 @@ const helpers = {
     },
 
     completeRB: async () => {
-        // Collect Nodes
+        // Collect Nodes - use data-color attribute for drag-and-drop
         const nodes = [];
         document.querySelectorAll('.rb-node').forEach(n => {
+            const color = n.dataset.color || (n.style.backgroundColor.includes('AA0000') || n.style.backgroundColor.includes('red') ? 'red' : 'black');
             nodes.push({
                 id: n.id, // rb-node-1
-                color: n.style.backgroundColor || 'black',
+                color: color,
                 value: parseInt(n.dataset.value)
             });
         });
@@ -525,19 +527,46 @@ function initBrokenTree() {
     });
 }
 
-function toggleColor(el) {
-    if (document.body.classList.contains('phase-locked')) return;
-
-    // Toggle
-    const currentColor = el.style.backgroundColor;
-    if (currentColor === 'black' || currentColor === '' || currentColor === 'rgb(0, 0, 0)') {
-        el.style.backgroundColor = '#AA0000'; // Red
-        el.style.borderColor = 'white';
-    } else {
-        el.style.backgroundColor = 'black';
-        el.style.borderColor = 'white';
-    }
-
-    // Auto sync state (transient)
-    requestAutoSave();
+// Red-Black Tree drag-and-drop color handling
+function initRBColorDragDrop() {
+    const colorBank = document.querySelectorAll('#challenge-rb .bank-container .draggable[data-color]');
+    const rbNodes = document.querySelectorAll('.rb-node.dropzone');
+    
+    colorBank.forEach(colorEl => {
+        colorEl.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', e.target.dataset.color);
+            e.target.style.opacity = '0.5';
+        });
+        
+        colorEl.addEventListener('dragend', (e) => {
+            e.target.style.opacity = '1';
+        });
+    });
+    
+    rbNodes.forEach(node => {
+        node.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            node.style.border = '2px dashed var(--accent-avengers)';
+        });
+        
+        node.addEventListener('dragleave', (e) => {
+            node.style.border = '';
+        });
+        
+        node.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const color = e.dataTransfer.getData('text/plain');
+            
+            if (color === 'black') {
+                node.style.backgroundColor = 'black';
+                node.dataset.color = 'black';
+            } else if (color === 'red') {
+                node.style.backgroundColor = '#AA0000';
+                node.dataset.color = 'red';
+            }
+            
+            node.style.border = '';
+            requestAutoSave();
+        });
+    });
 }

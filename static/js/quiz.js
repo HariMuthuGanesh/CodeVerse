@@ -2,7 +2,7 @@ let questions = [];
 let currentQuestionIndex = 0;
 let userAnswers = {}; // { questionId: answerString }
 let timerInterval;
-const TIME_LIMIT = 10 * 60; // 10 minutes in seconds
+const TIME_LIMIT = 10 * 60; // 10 minutes in seconds (600 seconds)
 let timeRemaining = TIME_LIMIT;
 let isTimeUp = false;
 

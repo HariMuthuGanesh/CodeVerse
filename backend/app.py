@@ -77,9 +77,11 @@ def static_files(filename):
 def get_utc_now_iso():
     return datetime.utcnow().isoformat()
 
-def db_upsert_participant(email, data):
+def db_upsert_participant(email, name):
     """
-    Safe idempotent upsert to Supabase with verification.
+    UPSERT for login only - Always sets email + name, never null name.
+    Preserves existing name if participant exists, only updates if new.
+    Initializes scores as NULL for new participants only.
     Returns (success: bool, error: str or None)
     """
     if not supabase:
@@ -87,11 +89,42 @@ def db_upsert_participant(email, data):
         return False, "Supabase not initialized"
     
     try:
-        payload = {"email": email}
-        payload.update(data)
-        payload["updated_at"] = get_utc_now_iso()
+        # CRITICAL: Never allow null name
+        if not name or name.strip() == "":
+            app.logger.error(f"[DB WRITE] Attempted to upsert with null/empty name for email={email}")
+            return False, "Name cannot be null or empty"
         
-        app.logger.info(f"[DB WRITE] Attempting upsert for email={email}, data={data}")
+        # Check if participant exists first
+        check_res = supabase.table('participants').select('email, name').eq('email', email).execute()
+        existing_name = None
+        if check_res.data and len(check_res.data) > 0:
+            existing_name = check_res.data[0].get('name')
+        
+        payload = {
+            "email": email,
+            "updated_at": get_utc_now_iso()
+        }
+        
+        # CRITICAL: Never overwrite name with null - preserve existing or use new
+        if existing_name and existing_name.strip():
+            # Participant exists with name - preserve it
+            payload["name"] = existing_name.strip()
+            app.logger.info(f"[DB WRITE] Preserving existing name for email={email}: {existing_name}")
+        else:
+            # New participant or name is null - set new name
+            payload["name"] = name.strip()
+            app.logger.info(f"[DB WRITE] Setting new name for email={email}: {name}")
+        
+        # Only initialize scores as NULL if this is a new participant
+        if not check_res.data or len(check_res.data) == 0:
+            # New participant - initialize scores as NULL
+            payload["phase1_score"] = None
+            payload["phase2_score"] = None
+            payload["phase3_score"] = None
+            payload["total_score"] = None
+            app.logger.info(f"[DB WRITE] Initializing scores as NULL for new participant")
+        
+        app.logger.info(f"[DB WRITE] Attempting upsert for email={email}, payload={payload}")
         
         res = supabase.table('participants').upsert(payload, on_conflict='email').execute()
         
@@ -105,24 +138,55 @@ def db_upsert_participant(email, data):
         return True, None
         
     except Exception as e:
+        error_msg = f"Supabase Upsert Failed: {str(e)}"
+        app.logger.error(f"[DB ERROR] {error_msg}")
+        return False, error_msg
+
+def db_update_participant(email, data):
+    """
+    UPDATE for phase submissions - NEVER use upsert after login.
+    Returns (success: bool, error: str or None)
+    """
+    if not supabase:
+        app.logger.error(f"[DB WRITE] Supabase client not initialized")
+        return False, "Supabase not initialized"
+    
+    try:
+        payload = data.copy()
+        payload["updated_at"] = get_utc_now_iso()
+        
+        app.logger.info(f"[DB WRITE] Attempting update for email={email}, payload={payload}")
+        
+        res = supabase.table('participants').update(payload).eq('email', email).execute()
+        
+        # CRITICAL: Verify write success
+        if res.data is None or (isinstance(res.data, list) and len(res.data) == 0):
+            error_msg = f"Supabase returned no data. Error: {getattr(res, 'error', 'Unknown')}"
+            app.logger.error(f"[DB ERROR] {error_msg}")
+            return False, error_msg
+        
+        app.logger.info(f"[DB SUCCESS] Update successful for email={email}, returned {len(res.data) if isinstance(res.data, list) else 1} row(s)")
+        return True, None
+        
+    except Exception as e:
         error_msg = f"Supabase Update Failed: {str(e)}"
         app.logger.error(f"[DB ERROR] {error_msg}")
         return False, error_msg
 
 def check_phase2_timer():
-    """Returns (is_active, seconds_remaining)."""
+    """Returns (is_active, seconds_remaining). Phase 2 is 15 minutes (900 seconds)."""
     if session.get('phase2_completed'):
         return False, 0
     
     start_str = session.get('phase2_started_at')
     if not start_str:
-        return True, 900 # Not started yet formal? Treated as fresh.
+        return True, 900  # 15 minutes = 900 seconds
         
     try:
         if start_str.endswith('Z'): start_str = start_str[:-1]
         start_time = datetime.fromisoformat(start_str)
         elapsed = (datetime.utcnow() - start_time).total_seconds()
-        remaining = max(0, 900 - int(elapsed))
+        remaining = max(0, 900 - int(elapsed))  # 15 minutes = 900 seconds
         
         if remaining == 0:
             session['phase2_completed'] = True
@@ -154,8 +218,8 @@ def api_login():
     session['phase2_completed'] = False
     session['phase3_completed'] = False
     
-    # 1. UPSERT SIGNUP - Verify write
-    success, error = db_upsert_participant(email, {"name": username})
+    # 1. UPSERT SIGNUP - Always upsert email + name, never null name
+    success, error = db_upsert_participant(email, username)
     if not success:
         app.logger.error(f"[LOGIN] Failed to upsert participant: {error}")
         return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
@@ -202,9 +266,15 @@ def api_login():
 
 @app.route('/api/quiz', methods=['GET'])
 def get_quiz():
+    import random
+    # Randomly select ONLY 10 questions from pool of 10
+    # Since pool has 10 questions, we return all 10 in random order
+    selected = QUIZ_QUESTIONS.copy()
+    random.shuffle(selected)
+    app.logger.info(f"[PHASE1] Returning {len(selected)} questions (randomized)")
     return jsonify([
         {"id": q["id"], "question": q["question"], "options": q["options"]} 
-        for q in QUIZ_QUESTIONS
+        for q in selected
     ])
 
 @app.route('/api/submit-quiz', methods=['POST'])
@@ -227,9 +297,22 @@ def submit_quiz():
     session['phase1_score'] = score
     session['phase1_completed'] = True
     
-    # COMPLETE PHASE 1 - DB UPDATE with verification
-    total = score + session.get('phase2_score', 0) + session.get('phase3_score', 0)
-    success, error = db_upsert_participant(email, {
+    # COMPLETE PHASE 1 - Use UPDATE (never upsert after login)
+    # Fetch current scores from DB to calculate total
+    try:
+        res = supabase.table('participants').select('phase2_score, phase3_score').eq('email', email).execute()
+        phase2_score = 0
+        phase3_score = 0
+        if res.data and len(res.data) > 0:
+            phase2_score = res.data[0].get('phase2_score') or 0
+            phase3_score = res.data[0].get('phase3_score') or 0
+    except Exception as e:
+        app.logger.warning(f"[PHASE1] Could not fetch existing scores: {str(e)}")
+        phase2_score = 0
+        phase3_score = 0
+    
+    total = score + phase2_score + phase3_score
+    success, error = db_update_participant(email, {
         "phase1_score": score,
         "total_score": total
     })
@@ -240,7 +323,7 @@ def submit_quiz():
     
     app.logger.info(f"[PHASE1] Successfully saved score={score} for email={email}")
     
-    # MANDATORY: Return completion flags
+    # MANDATORY: Unlock Phase 2 ONLY if DB write succeeds
     total_questions = len(QUIZ_QUESTIONS)
     return jsonify({
         "success": True,
@@ -255,26 +338,88 @@ def submit_quiz():
 
 @app.route('/api/phase2/sync', methods=['POST'])
 def sync_phase2():
-    """Main heartbeat: Updates session state, checks timer."""
-    if not session.get('user_email'): return jsonify({"error": "Auth required"}), 401
+    """
+    Main heartbeat: Updates DB with phase2_state, phase2_time_left, phase2_started_at.
+    Persistent across refresh.
+    """
+    email = session.get('user_email')
+    if not email:
+        return jsonify({"error": "Auth required"}), 401
+    
+    # Fetch from DB first to restore state
+    try:
+        res = supabase.table('participants').select('phase2_started_at, phase2_time_left, phase2_state, phase2_completed').eq('email', email).execute()
+        if res.data and len(res.data) > 0:
+            row = res.data[0]
+            db_started_at = row.get('phase2_started_at')
+            db_time_left = row.get('phase2_time_left')
+            db_state = row.get('phase2_state') or {}
+            db_completed = row.get('phase2_completed', False)
+            
+            if db_started_at:
+                session['phase2_started_at'] = db_started_at
+            if db_time_left is not None:
+                # Use DB time_left if available
+                remaining = db_time_left
+            else:
+                # Calculate from started_at
+                if db_started_at:
+                    try:
+                        if db_started_at.endswith('Z'): db_started_at = db_started_at[:-1]
+                        start_time = datetime.fromisoformat(db_started_at)
+                        elapsed = (datetime.utcnow() - start_time).total_seconds()
+                        remaining = max(0, 900 - int(elapsed))  # 15 minutes
+                    except:
+                        remaining = 900
+                else:
+                    remaining = 900
+            
+            if db_state:
+                session['phase2_state'] = db_state
+            
+            if db_completed:
+                session['phase2_completed'] = True
+                return jsonify({
+                    "success": True,
+                    "started_at": db_started_at,
+                    "time_left": 0,
+                    "completed": True,
+                    "state": db_state
+                })
+    except Exception as e:
+        app.logger.warning(f"[PHASE2 SYNC] Error fetching from DB: {str(e)}")
     
     # Auto Start if first time
     if not session.get('phase2_started_at') and not session.get('phase2_completed'):
-        session['phase2_started_at'] = get_utc_now_iso()
+        started_at = get_utc_now_iso()
+        session['phase2_started_at'] = started_at
         session['bst_score'] = 0
         session['rb_score'] = 0
         session['detective_score'] = 0
+        
+        # Save to DB immediately
+        db_update_participant(email, {
+            "phase2_started_at": started_at,
+            "phase2_time_left": 900,
+            "phase2_state": {}
+        })
     
     # Check Timer
     active, remaining = check_phase2_timer()
     
-    # Update Session State (Transient)
-    client_state = request.json.get('state')
+    # Update Session State and save to DB
+    client_state = request.json.get('state') if request.json else None
     if active and client_state:
         # Merge state into session
         current = session.get('phase2_state', {})
         current.update(client_state)
         session['phase2_state'] = current
+        
+        # Save to DB for persistence
+        db_update_participant(email, {
+            "phase2_time_left": remaining,
+            "phase2_state": current
+        })
 
     return jsonify({
         "success": True,
@@ -307,8 +452,8 @@ def validate_bst_logic(slots):
     return False, "BST Property Violated"
 
 def validate_rb_logic(node_list):
-    # expect [{'id': 'rb-node-1', 'color': 'red', 'value': 40}, ...]
-    # Build tree structure
+    # expect [{'id': 'rb-node-1', 'color': 'red' or 'black', 'value': 40}, ...]
+    # Build tree structure - now uses drag-and-drop with data-color attribute
     
     # Fixed Values in UI: 1=40, 2=20, 3=60, 4=10, 5=30, 6=50, 7=70
     id_map = {1: 40, 2: 20, 3: 60, 4: 10, 5: 30, 6: 50, 7: 70}
@@ -319,13 +464,15 @@ def validate_rb_logic(node_list):
             # Match rb-node-1 -> 1
             if 'rb-node-' in n['id']:
                 nid = int(n['id'].replace('rb-node-', ''))
-                # frontend sends generic style string often
-                c_str = n.get('color', '').lower()
-                # If background is black or empty or rgb(0,0,0) -> Black.
-                # If red or #AA0000 -> Red.
-                is_red = 'red' in c_str or 'aa0000' in c_str
-                colors[nid] = 'red' if is_red else 'black'
-        except: pass
+                # Frontend now sends 'color' as 'red' or 'black' from data-color attribute
+                color_str = str(n.get('color', 'black')).lower().strip()
+                if color_str == 'red':
+                    colors[nid] = 'red'
+                else:
+                    colors[nid] = 'black'  # Default to black
+        except Exception as e:
+            app.logger.warning(f"[RB VALIDATION] Error parsing node {n}: {str(e)}")
+            pass
 
     # 1. Root Black
     if colors.get(1, 'black') != 'black': return False, "Root must be BLACK"
@@ -377,6 +524,80 @@ def submit_bst():
     
     return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
+def validate_detective_logic(slots):
+    """
+    Tree Detective: Require detecting MULTIPLE violations.
+    The broken tree has 2 violations:
+    - Node 60 is in left subtree but > root (50)
+    - Node 40 is in right subtree but < root (50)
+    """
+    try:
+        nodes = {int(k): int(v) for k, v in slots.items() if v}
+    except:
+        return False, "Invalid Data", 0
+
+    if len(nodes) < 7:
+        return False, "Incomplete Tree", 0
+
+    # Expected correct structure: 50, 30, 70, 20, 40, 60, 80
+    # Broken structure has: 50, 30, 70, 20, 60, 40, 80
+    # Violations:
+    # 1. Node 60 (slot 5) is right child of 30, but 60 > 50 (root) - should be in right subtree
+    # 2. Node 40 (slot 6) is left child of 70, but 40 < 50 (root) - should be in left subtree
+    
+    violations_found = 0
+    violations_expected = 2
+    
+    # Check if tree is valid BST
+    def is_bst(idx, min_val, max_val):
+        if idx not in nodes:
+            return True
+        val = nodes[idx]
+        if not (min_val < val < max_val):
+            return False
+        return is_bst(2*idx, min_val, val) and is_bst(2*idx+1, val, max_val)
+    
+    # First check: Is it a valid BST? If yes, no violations detected
+    if is_bst(1, float('-inf'), float('inf')):
+        return False, "No violations detected. Tree is valid BST.", 0
+    
+    # Count violations by checking each node
+    root_val = nodes.get(1)
+    if root_val:
+        # Check left subtree violations
+        if 2 in nodes:  # Left child
+            left_val = nodes[2]
+            if left_val >= root_val:
+                violations_found += 1
+        if 4 in nodes:  # Left-left
+            ll_val = nodes[4]
+            if ll_val >= root_val:
+                violations_found += 1
+        if 5 in nodes:  # Left-right
+            lr_val = nodes[5]
+            if lr_val >= root_val:
+                violations_found += 1
+        
+        # Check right subtree violations
+        if 3 in nodes:  # Right child
+            right_val = nodes[3]
+            if right_val <= root_val:
+                violations_found += 1
+        if 6 in nodes:  # Right-left
+            rl_val = nodes[6]
+            if rl_val <= root_val:
+                violations_found += 1
+        if 7 in nodes:  # Right-right
+            rr_val = nodes[7]
+            if rr_val <= root_val:
+                violations_found += 1
+    
+    # Must detect at least 2 violations
+    if violations_found >= violations_expected:
+        return True, f"Detected {violations_found} violation(s). Tree fixed!", violations_found
+    else:
+        return False, f"Only detected {violations_found} violation(s). Need to find {violations_expected} violations.", violations_found
+
 @app.route('/api/detective/submit', methods=['POST'])
 def submit_detective():
     active, _ = check_phase2_timer()
@@ -385,8 +606,9 @@ def submit_detective():
     data = request.json
     slots = data.get('slots', {})
     
-    valid, msg = validate_bst_logic(slots)
+    valid, msg, violations = validate_detective_logic(slots)
     
+    # Score based on violations detected (20 points if all violations found)
     points = 20 if valid else 0
     session['detective_score'] = points
     
@@ -394,7 +616,9 @@ def submit_detective():
     state['detective_score'] = points
     session['phase2_state'] = state
 
-    return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
+    app.logger.info(f"[PHASE2 DETECTIVE] Violations detected: {violations}, Valid: {valid}, Score: {points}")
+    
+    return jsonify({"success": True, "valid": valid, "message": msg, "score": points, "violations": violations})
 
 @app.route('/api/rb/complete', methods=['POST'])
 def complete_rb():
@@ -422,17 +646,33 @@ def exit_phase2():
         app.logger.warning(f"[PHASE2] Exit attempt without authentication")
         return jsonify({"success": False, "error": "Authentication required"}), 401
     
-    # COMPLETE PHASE 2
-    session['phase2_completed'] = True
-    
+    # COMPLETE PHASE 2 - Calculate score from state
     p2_score = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
     session['phase2_score'] = p2_score
+    session['phase2_completed'] = True
     
     app.logger.info(f"[PHASE2] Exit for email={email}, score={p2_score}")
     
-    total = session.get('phase1_score', 0) + p2_score + session.get('phase3_score', 0)
-    success, error = db_upsert_participant(email, {
+    # Fetch current scores from DB to calculate total
+    try:
+        res = supabase.table('participants').select('phase1_score, phase3_score').eq('email', email).execute()
+        phase1_score = 0
+        phase3_score = 0
+        if res.data and len(res.data) > 0:
+            phase1_score = res.data[0].get('phase1_score') or 0
+            phase3_score = res.data[0].get('phase3_score') or 0
+    except Exception as e:
+        app.logger.warning(f"[PHASE2] Could not fetch existing scores: {str(e)}")
+        phase1_score = 0
+        phase3_score = 0
+    
+    total = phase1_score + p2_score + phase3_score
+    
+    # Use UPDATE - set phase2_score and phase2_completed = true
+    success, error = db_update_participant(email, {
         "phase2_score": p2_score,
+        "phase2_completed": True,
+        "phase2_time_left": 0,
         "total_score": total
     })
     
@@ -440,9 +680,9 @@ def exit_phase2():
         app.logger.error(f"[PHASE2] DB write failed for email={email}: {error}")
         return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
     
-    app.logger.info(f"[PHASE2] Successfully saved score={p2_score} for email={email}")
+    app.logger.info(f"[PHASE2] Successfully saved score={p2_score}, phase2_completed=true for email={email}")
     
-    # MANDATORY: Return completion flags
+    # MANDATORY: Unlock Phase 3 ONLY after DB success
     return jsonify({
         "success": True,
         "phase2_completed": True,
@@ -471,9 +711,23 @@ def complete_phase_3():
     session['phase3_score'] = points
     session['phase3_completed'] = True
     
-    # COMPLETE PHASE 3 - DB UPDATE with verification
-    total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + points
-    success, error = db_upsert_participant(email, {
+    # Fetch current scores from DB to calculate total
+    try:
+        res = supabase.table('participants').select('phase1_score, phase2_score').eq('email', email).execute()
+        phase1_score = 0
+        phase2_score = 0
+        if res.data and len(res.data) > 0:
+            phase1_score = res.data[0].get('phase1_score') or 0
+            phase2_score = res.data[0].get('phase2_score') or 0
+    except Exception as e:
+        app.logger.warning(f"[PHASE3] Could not fetch existing scores: {str(e)}")
+        phase1_score = 0
+        phase2_score = 0
+    
+    total = phase1_score + phase2_score + points
+    
+    # COMPLETE PHASE 3 - Use UPDATE (never upsert after login)
+    success, error = db_update_participant(email, {
         "phase3_score": points,
         "total_score": total
     })

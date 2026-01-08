@@ -352,23 +352,38 @@
             <button class="btn-action" onclick="validateBST()" style="margin-top: 2rem;">VALIDATE & SUBMIT BST</button>
         </div>
 
-        <!-- RED-BLACK CHALLENGE UI (New Click-to-Color) -->
+        <!-- RED-BLACK CHALLENGE UI (Full Drag-and-Drop) -->
         <div id="challenge-rb" class="challenge-content">
             <div
                 style="background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; text-align:center;">
                 <h3>Red-Black Tree Balance</h3>
-                <p>Click nodes to toggle color: <span style="color:red">RED</span> / <span
+                <p>Drag colors onto nodes: <span style="color:red">RED</span> / <span
                         style="color:white">BLACK</span>.<br>
                     <span style="color: grey; font-size: 0.9em;">Rules: 1. Root must be BLACK. 2. No Red-Red adjacency.
                         3. Equal Black Height.</span>
                 </p>
             </div>
 
+            <!-- Color Bank -->
+            <div class="bank-container glass-card" style="margin-bottom: 2rem;">
+                <h4 style="margin-bottom: 1rem; color: var(--accent-avengers);">Color Bank</h4>
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <div class="draggable" draggable="true" data-color="black" id="color-black"
+                        style="background: black; color: white; padding: 1rem 2rem; border-radius: 8px; cursor: grab; user-select: none;">
+                        BLACK
+                    </div>
+                    <div class="draggable" draggable="true" data-color="red" id="color-red"
+                        style="background: #AA0000; color: white; padding: 1rem 2rem; border-radius: 8px; cursor: grab; user-select: none;">
+                        RED
+                    </div>
+                </div>
+            </div>
+
             <div class="bst-viz-container"
                 style="height:400px; display:flex; flex-direction:column; align-items:center;">
                 <!-- Root -->
                 <div class="tree-level">
-                    <div class="rb-node" id="rb-node-1" data-value="40" onclick="toggleColor(this)"
+                    <div class="rb-node dropzone" id="rb-node-1" data-value="40" data-color="black"
                         style="background:black;">40</div>
                 </div>
 
@@ -380,9 +395,9 @@
 
                 <!-- L2 -->
                 <div class="tree-level" style="gap:8rem;">
-                    <div class="rb-node" id="rb-node-2" data-value="20" onclick="toggleColor(this)"
+                    <div class="rb-node dropzone" id="rb-node-2" data-value="20" data-color="black"
                         style="background:black;">20</div>
-                    <div class="rb-node" id="rb-node-3" data-value="60" onclick="toggleColor(this)"
+                    <div class="rb-node dropzone" id="rb-node-3" data-value="60" data-color="black"
                         style="background:black;">60</div>
                 </div>
 
@@ -401,15 +416,15 @@
                 <!-- L3 -->
                 <div class="tree-level" style="gap:3rem;">
                     <div style="display:flex; gap:1.5rem;">
-                        <div class="rb-node" id="rb-node-4" data-value="10" onclick="toggleColor(this)"
+                        <div class="rb-node dropzone" id="rb-node-4" data-value="10" data-color="black"
                             style="background:black;">10</div>
-                        <div class="rb-node" id="rb-node-5" data-value="30" onclick="toggleColor(this)"
+                        <div class="rb-node dropzone" id="rb-node-5" data-value="30" data-color="black"
                             style="background:black;">30</div>
                     </div>
                     <div style="display:flex; gap:1.5rem;">
-                        <div class="rb-node" id="rb-node-6" data-value="50" onclick="toggleColor(this)"
+                        <div class="rb-node dropzone" id="rb-node-6" data-value="50" data-color="black"
                             style="background:black;">50</div>
-                        <div class="rb-node" id="rb-node-7" data-value="70" onclick="toggleColor(this)"
+                        <div class="rb-node dropzone" id="rb-node-7" data-value="70" data-color="black"
                             style="background:black;">70</div>
                     </div>
                 </div>
