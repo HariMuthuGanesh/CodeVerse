@@ -110,9 +110,23 @@
     <script src="../static/js/animations.js"></script>
     <script src="../static/js/phase-control.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', async () => {
+        async function refreshPhaseStatus() {
             const status = await checkPhaseStatus();
             updatePhaseUI(status);
+        }
+        
+        document.addEventListener('DOMContentLoaded', async () => {
+            await refreshPhaseStatus();
+            
+            // Refresh status every 2 seconds to catch Phase 2 completion
+            setInterval(refreshPhaseStatus, 2000);
+        });
+        
+        // Also refresh when page becomes visible (user returns from Phase 2)
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                refreshPhaseStatus();
+            }
         });
     </script>
 </body>

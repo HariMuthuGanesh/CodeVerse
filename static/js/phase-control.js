@@ -74,8 +74,12 @@ function updatePhaseUI(status) {
     const p2Completed = status.phase2_completed || (status.phase2_details && status.phase2_details.bst.status === 'exited');
     updateCard('phase-2-card', status.phase1_completed, p2Completed, status.phase2_score || 0, "Phase 2");
 
-    // Phase 3: Unlocked if Phase 2 completed
-    updateCard('phase-3-card', status.phase2_completed, status.phase3_completed, status.phase3_score || 0, "Phase 3");
+    // Phase 3: Unlocked ONLY if Phase 2 completed (locked until Phase 2 is done)
+    const phase3Unlocked = status.phase2_completed === true;
+    updateCard('phase-3-card', phase3Unlocked, status.phase3_completed, status.phase3_score || 0, "Phase 3");
+    
+    // Log for debugging
+    console.log('[PHASE CONTROL] Phase 2 completed:', status.phase2_completed, 'Phase 3 unlocked:', phase3Unlocked);
 
     // Special CSS for Locked Overlay based on class
     document.querySelectorAll('.phase-card.locked').forEach(c => {

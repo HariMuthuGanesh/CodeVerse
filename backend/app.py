@@ -271,11 +271,19 @@ def get_quiz():
     # Since pool has 10 questions, we return all 10 in random order
     selected = QUIZ_QUESTIONS.copy()
     random.shuffle(selected)
-    app.logger.info(f"[PHASE1] Returning {len(selected)} questions (randomized)")
-    return jsonify([
+    app.logger.info(f"[PHASE1] Total questions in pool: {len(QUIZ_QUESTIONS)}, Returning {len(selected)} questions (randomized)")
+    
+    # Verify we're returning all questions
+    if len(selected) != 10:
+        app.logger.warning(f"[PHASE1] WARNING: Expected 10 questions but got {len(selected)}")
+    
+    result = [
         {"id": q["id"], "question": q["question"], "options": q["options"]} 
         for q in selected
-    ])
+    ]
+    
+    app.logger.info(f"[PHASE1] Returning question IDs: {[q['id'] for q in result]}")
+    return jsonify(result)
 
 @app.route('/api/submit-quiz', methods=['POST'])
 def submit_quiz():
@@ -748,19 +756,76 @@ def complete_phase_3():
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
-    p2_completed = session.get('phase2_completed', False)
+    """
+    Get phase status from Supabase (source of truth).
+    Derive phase completion from DB scores.
+    """
+    email = session.get('user_email')
+    if not email:
+        return jsonify({
+            "phase1_completed": False,
+            "phase2_completed": False,
+            "phase3_completed": False,
+            "phase1_score": 0,
+            "phase2_score": 0,
+            "phase3_score": 0
+        })
     
-    if not p2_completed and session.get('phase2_started_at'):
-        active, _ = check_phase2_timer()
-        if not active: p2_completed = True
+    # Fetch from Supabase - DB is source of truth
+    phase1_completed = False
+    phase2_completed = False
+    phase3_completed = False
+    phase1_score = 0
+    phase2_score = 0
+    phase3_score = 0
+    
+    try:
+        if supabase:
+            res = supabase.table('participants').select('phase1_score, phase2_score, phase3_score, phase2_completed').eq('email', email).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                phase1_score = row.get('phase1_score') or 0
+                phase2_score = row.get('phase2_score') or 0
+                phase3_score = row.get('phase3_score') or 0
+                
+                # Derive phase completion from DB only
+                # Phase 1: completed if score exists and > 0
+                phase1_completed = row.get('phase1_score') is not None and phase1_score > 0
+                
+                # Phase 2: completed if phase2_completed flag is True OR score exists and > 0
+                phase2_completed = row.get('phase2_completed', False)
+                if not phase2_completed:
+                    phase2_completed = row.get('phase2_score') is not None and phase2_score > 0
+                
+                # Phase 3: completed if score exists and > 0
+                phase3_completed = row.get('phase3_score') is not None and phase3_score > 0
+                
+                # Update session to keep in sync
+                session['phase1_completed'] = phase1_completed
+                session['phase2_completed'] = phase2_completed
+                session['phase3_completed'] = phase3_completed
+                session['phase1_score'] = phase1_score
+                session['phase2_score'] = phase2_score
+                session['phase3_score'] = phase3_score
+                
+                app.logger.info(f"[STATUS] Fetched from DB - Phase1: {phase1_completed}, Phase2: {phase2_completed} (DB flag: {row.get('phase2_completed')}), Phase3: {phase3_completed}")
+    except Exception as e:
+        app.logger.error(f"[STATUS] Error fetching from DB: {str(e)}")
+        # Fallback to session
+        phase1_completed = session.get('phase1_completed', False)
+        phase2_completed = session.get('phase2_completed', False)
+        phase3_completed = session.get('phase3_completed', False)
+        phase1_score = session.get('phase1_score', 0)
+        phase2_score = session.get('phase2_score', 0)
+        phase3_score = session.get('phase3_score', 0)
         
     return jsonify({
-        "phase1_completed": session.get('phase1_completed', False),
-        "phase2_completed": p2_completed,
-        "phase3_completed": session.get('phase3_completed', False),
-        "phase1_score": session.get('phase1_score', 0),
-        "phase2_score": session.get('phase2_score', 0),
-        "phase3_score": session.get('phase3_score', 0)
+        "phase1_completed": phase1_completed,
+        "phase2_completed": phase2_completed,
+        "phase3_completed": phase3_completed,
+        "phase1_score": phase1_score,
+        "phase2_score": phase2_score,
+        "phase3_score": phase3_score
     })
     
 @app.route('/api/get-total-score', methods=['GET'])
