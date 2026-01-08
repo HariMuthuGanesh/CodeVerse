@@ -173,27 +173,7 @@ def db_update_participant(email, data):
         app.logger.error(f"[DB ERROR] {error_msg}")
         return False, error_msg
 
-def check_phase2_timer():
-    """Returns (is_active, seconds_remaining). Phase 2 is 15 minutes (900 seconds)."""
-    if session.get('phase2_completed'):
-        return False, 0
-    
-    start_str = session.get('phase2_started_at')
-    if not start_str:
-        return True, 900  # 15 minutes = 900 seconds
-        
-    try:
-        if start_str.endswith('Z'): start_str = start_str[:-1]
-        start_time = datetime.fromisoformat(start_str)
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
-        remaining = max(0, 900 - int(elapsed))  # 15 minutes = 900 seconds
-        
-        if remaining == 0:
-            session['phase2_completed'] = True
-            return False, 0
-        return True, remaining
-    except:
-        return True, 900
+# Timer logic removed - Phase 2 has unlimited time
 
 # --- AUTH & PHASE 1 ---
 
@@ -267,15 +247,9 @@ def api_login():
 @app.route('/api/quiz', methods=['GET'])
 def get_quiz():
     import random
-    # Randomly select ONLY 10 questions from pool of 10
-    # Since pool has 10 questions, we return all 10 in random order
-    selected = QUIZ_QUESTIONS.copy()
-    random.shuffle(selected)
+    # Randomly select ONLY 5 questions from pool of 10
+    selected = random.sample(QUIZ_QUESTIONS, min(5, len(QUIZ_QUESTIONS)))
     app.logger.info(f"[PHASE1] Total questions in pool: {len(QUIZ_QUESTIONS)}, Returning {len(selected)} questions (randomized)")
-    
-    # Verify we're returning all questions
-    if len(selected) != 10:
-        app.logger.warning(f"[PHASE1] WARNING: Expected 10 questions but got {len(selected)}")
     
     result = [
         {"id": q["id"], "question": q["question"], "options": q["options"]} 
@@ -347,7 +321,8 @@ def submit_quiz():
 @app.route('/api/phase2/sync', methods=['POST'])
 def sync_phase2():
     """
-    Main heartbeat: Updates DB with phase2_state, phase2_time_left, phase2_started_at.
+    Main heartbeat: Updates DB with phase2_state only.
+    No timers - unlimited time.
     Persistent across refresh.
     """
     email = session.get('user_email')
@@ -356,31 +331,11 @@ def sync_phase2():
     
     # Fetch from DB first to restore state
     try:
-        res = supabase.table('participants').select('phase2_started_at, phase2_time_left, phase2_state, phase2_completed').eq('email', email).execute()
+        res = supabase.table('participants').select('phase2_state, phase2_completed').eq('email', email).execute()
         if res.data and len(res.data) > 0:
             row = res.data[0]
-            db_started_at = row.get('phase2_started_at')
-            db_time_left = row.get('phase2_time_left')
             db_state = row.get('phase2_state') or {}
             db_completed = row.get('phase2_completed', False)
-            
-            if db_started_at:
-                session['phase2_started_at'] = db_started_at
-            if db_time_left is not None:
-                # Use DB time_left if available
-                remaining = db_time_left
-            else:
-                # Calculate from started_at
-                if db_started_at:
-                    try:
-                        if db_started_at.endswith('Z'): db_started_at = db_started_at[:-1]
-                        start_time = datetime.fromisoformat(db_started_at)
-                        elapsed = (datetime.utcnow() - start_time).total_seconds()
-                        remaining = max(0, 900 - int(elapsed))  # 15 minutes
-                    except:
-                        remaining = 900
-                else:
-                    remaining = 900
             
             if db_state:
                 session['phase2_state'] = db_state
@@ -389,52 +344,35 @@ def sync_phase2():
                 session['phase2_completed'] = True
                 return jsonify({
                     "success": True,
-                    "started_at": db_started_at,
-                    "time_left": 0,
                     "completed": True,
                     "state": db_state
                 })
     except Exception as e:
         app.logger.warning(f"[PHASE2 SYNC] Error fetching from DB: {str(e)}")
     
-    # Auto Start if first time
-    if not session.get('phase2_started_at') and not session.get('phase2_completed'):
-        started_at = get_utc_now_iso()
-        session['phase2_started_at'] = started_at
+    # Initialize scores if first time
+    if not session.get('bst_score') is not None and not session.get('phase2_completed'):
         session['bst_score'] = 0
         session['rb_score'] = 0
         session['detective_score'] = 0
-        
-        # Save to DB immediately
-        db_update_participant(email, {
-            "phase2_started_at": started_at,
-            "phase2_time_left": 900,
-            "phase2_state": {}
-        })
-    
-    # Check Timer
-    active, remaining = check_phase2_timer()
     
     # Update Session State and save to DB
     client_state = request.json.get('state') if request.json else None
-    if active and client_state:
+    if client_state and not session.get('phase2_completed'):
         # Merge state into session
         current = session.get('phase2_state', {})
         current.update(client_state)
         session['phase2_state'] = current
         
-        # Save to DB for persistence
+        # Save to DB for persistence (only phase2_state, no timer fields)
         db_update_participant(email, {
-            "phase2_time_left": remaining,
             "phase2_state": current
         })
 
     return jsonify({
         "success": True,
-        "started_at": session.get('phase2_started_at'),
-        "time_left": remaining,
         "completed": session.get('phase2_completed', False),
-        "state": session.get('phase2_state')
+        "state": session.get('phase2_state', {})
     })
 
 # --- PHASE 2 VALIDATION HANDLERS (STRICT SERVER-SIDE) ---
@@ -514,8 +452,9 @@ def validate_rb_logic(node_list):
 
 @app.route('/api/bst/submit', methods=['POST'])
 def submit_bst():
-    active, _ = check_phase2_timer()
-    if not active: return jsonify({"success": False, "message": "Locked"})
+    # No timer check - unlimited time
+    if session.get('phase2_completed'):
+        return jsonify({"success": False, "message": "Phase 2 already completed"})
     
     data = request.json
     slots = data.get('slots', {}) # Map of slot_index -> value
@@ -608,8 +547,9 @@ def validate_detective_logic(slots):
 
 @app.route('/api/detective/submit', methods=['POST'])
 def submit_detective():
-    active, _ = check_phase2_timer()
-    if not active: return jsonify({"success": False, "message": "Locked"})
+    # No timer check - unlimited time
+    if session.get('phase2_completed'):
+        return jsonify({"success": False, "message": "Phase 2 already completed"})
     
     data = request.json
     slots = data.get('slots', {})
@@ -630,8 +570,9 @@ def submit_detective():
 
 @app.route('/api/rb/complete', methods=['POST'])
 def complete_rb():
-    active, _ = check_phase2_timer()
-    if not active: return jsonify({"success": False, "message": "Locked"})
+    # No timer check - unlimited time
+    if session.get('phase2_completed'):
+        return jsonify({"success": False, "message": "Phase 2 already completed"})
     
     data = request.json
     nodes = data.get('nodes', [])
@@ -677,10 +618,10 @@ def exit_phase2():
     total = phase1_score + p2_score + phase3_score
     
     # Use UPDATE - set phase2_score and phase2_completed = true
+    # No timer fields - removed phase2_time_left
     success, error = db_update_participant(email, {
         "phase2_score": p2_score,
         "phase2_completed": True,
-        "phase2_time_left": 0,
         "total_score": total
     })
     

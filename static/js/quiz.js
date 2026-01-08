@@ -1,10 +1,7 @@
 let questions = [];
 let currentQuestionIndex = 0;
 let userAnswers = {}; // { questionId: answerString }
-let timerInterval;
-const TIME_LIMIT = 10 * 60; // 10 minutes in seconds (600 seconds)
-let timeRemaining = TIME_LIMIT;
-let isTimeUp = false;
+// Timer removed - unlimited time
 
 // Fallback questions if API fails
 const FALLBACK_QUESTIONS = [
@@ -53,8 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
             renderQuestion();
             updateProgress();
         });
-
-    startTimer();
 });
 
 async function fetchQuestions() {
@@ -132,51 +127,7 @@ async function fetchQuestions() {
     }
 }
 
-function startTimer() {
-    const timerDisplay = document.getElementById('timer-display');
-    if (!timerDisplay) return;
-    
-    timerInterval = setInterval(() => {
-        timeRemaining--;
-        const mins = Math.floor(timeRemaining / 60);
-        const secs = timeRemaining % 60;
-        timerDisplay.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-
-        // Critical color change
-        if (timeRemaining < 60) {
-            timerDisplay.style.color = 'var(--accent-red-bright)';
-            timerDisplay.style.textShadow = '0 0 10px var(--accent-red-bright)';
-        }
-
-        if (timeRemaining <= 0) {
-            clearInterval(timerInterval);
-            isTimeUp = true;
-            disableQuiz();
-            submitQuiz();
-        }
-    }, 1000);
-}
-
-function disableQuiz() {
-    // Disable all interactive elements
-    document.querySelectorAll('.option-card').forEach(card => {
-        card.style.pointerEvents = 'none';
-        card.style.opacity = '0.5';
-    });
-    
-    document.querySelectorAll('.btn-cyber').forEach(btn => {
-        btn.disabled = true;
-        btn.style.pointerEvents = 'none';
-        btn.style.opacity = '0.5';
-    });
-    
-    // Show time up message
-    const timerDisplay = document.getElementById('timer-display');
-    if (timerDisplay) {
-        timerDisplay.textContent = 'TIME UP!';
-        timerDisplay.style.color = 'var(--accent-red-bright)';
-    }
-}
+// Timer functions removed - unlimited time
 
 function renderQuestion() {
     console.log('renderQuestion called');
@@ -315,10 +266,6 @@ function updateProgress() {
 }
 
 async function submitQuiz() {
-    if (timerInterval) {
-        clearInterval(timerInterval);
-    }
-    
     const overlay = document.getElementById('loading-overlay');
     if (overlay) {
         overlay.classList.add('active');
@@ -330,7 +277,6 @@ async function submitQuiz() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 answers: userAnswers,
-                timeUp: isTimeUp,
                 questionsAttempted: Object.keys(userAnswers).length,
                 totalQuestions: questions.length
             })
@@ -363,11 +309,10 @@ function showResult(result) {
 
     // Always allow users to proceed - no restrictions
     const questionsAttempted = Object.keys(userAnswers).length;
-    const timeUpMsg = isTimeUp ? "<br><strong style='color: var(--accent-red-bright);'>⏱️ Time ended - Auto-submitted</strong>" : "";
     
     title.innerHTML = "PHASE 1 COMPLETE <span style='color:var(--accent-avengers)'>✓</span>";
     title.style.color = "var(--accent-avengers)";
-    msg.innerHTML = `Score: ${result.score}/${result.total} | Points: ${points}/${totalPoints}<br>Questions Attempted: ${questionsAttempted}/${result.total}${timeUpMsg}<br>Phase completed! You can proceed to the next challenge.`;
+    msg.innerHTML = `Score: ${result.score}/${result.total} | Points: ${points}/${totalPoints}<br>Questions Attempted: ${questionsAttempted}/${result.total}<br>Phase completed! You can proceed to the next challenge.`;
     actionArea.innerHTML = `<a href="phases.html" class="btn-cyber">PROCEED TO NEXT PHASE</a>`;
     
     // CRITICAL: Unlock Phase 2 immediately based on API response (DB-driven)

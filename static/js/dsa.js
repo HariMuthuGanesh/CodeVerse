@@ -1,9 +1,6 @@
 // DSA Phase 2 Controller (Option B Strict)
-// Handles BST Game, RB Challenge, Tree Detective (Extra), Timer, and API interactions
-
-let phase2Timer = null;
-let timeRemaining = 900; // 15 minutes = 900 seconds (persistent across refresh)
-let phaseStartedAt = null; // Date object
+// Handles BST Game, RB Challenge, Tree Detective (Extra), and API interactions
+// Timer removed - unlimited time
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initPhase2();
@@ -13,7 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function initPhase2() {
     try {
-        // Use sync endpoint to get authoritative state including started_at
+        // Use sync endpoint to get authoritative state
         const res = await fetch('/api/phase2/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -24,22 +21,10 @@ async function initPhase2() {
         // 1. Handle Completion / Lock
         if (data.completed) {
             lockPhase();
-            document.getElementById('phase2-timer').textContent = "00:00";
             return;
         }
 
-        // 2. Setup Timer (Server Authoritative)
-        if (data.started_at) {
-            // Calculate offset if possible, or just rely on UTC strings
-            const serverStart = new Date(data.started_at.endsWith('Z') ? data.started_at : data.started_at + 'Z');
-            phaseStartedAt = serverStart;
-
-            // Initial sync
-            updateTimerLogic();
-            startTimer();
-        }
-
-        // 3. Restore State
+        // 2. Restore State (no timer logic)
         if (data.state) {
             restoreStates(
                 data.state.bst_state,
@@ -58,53 +43,7 @@ async function initPhase2() {
     }
 }
 
-function startTimer() {
-    if (phase2Timer) clearInterval(phase2Timer);
-    phase2Timer = setInterval(() => {
-        const active = updateTimerLogic();
-
-        // Autosave every 15s
-        if (active && timeRemaining % 15 === 0) {
-            saveState(); // Autosave session
-        }
-
-        if (!active) {
-            clearInterval(phase2Timer);
-            finishRound(true);
-        }
-    }, 1000);
-}
-
-function updateTimerLogic() {
-    if (!phaseStartedAt) return false;
-
-    const now = new Date();
-    // Assuming client time is relatively synced or we accept drift for display.
-    // Server enforces the real limit.
-    // Convert to Coordinated Universal Time (UTC) to match server
-    const nowUtc = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
-
-    // Server sends UTC string. JS Date(iso) handles timezone if Z provided. 
-    // phaseStartedAt was constructed from server string.
-
-    const diff = (now - phaseStartedAt) / 1000; // seconds
-    const remaining = 900 - Math.floor(diff); // 15 minutes = 900 seconds
-
-    timeRemaining = Math.max(0, remaining);
-    updateTimerDisplay();
-
-    return timeRemaining > 0;
-}
-
-function updateTimerDisplay() {
-    const mins = Math.floor(timeRemaining / 60);
-    const secs = timeRemaining % 60;
-    const el = document.getElementById('phase2-timer');
-    if (el) {
-        el.textContent = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        if (timeRemaining < 60) el.classList.add('warning');
-    }
-}
+// Timer functions removed - unlimited time
 
 function lockPhase() {
     // Disable all interactions
@@ -340,7 +279,7 @@ async function pauseGame() {
 
 function resumeGame() {
     document.getElementById('pause-modal').classList.remove('active');
-    updateTimerLogic();
+    // Timer removed - unlimited time
 }
 
 async function saveAndExit() {
