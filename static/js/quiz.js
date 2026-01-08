@@ -369,4 +369,10 @@ function showResult(result) {
     title.style.color = "var(--accent-avengers)";
     msg.innerHTML = `Score: ${result.score}/${result.total} | Points: ${points}/${totalPoints}<br>Questions Attempted: ${questionsAttempted}/${result.total}${timeUpMsg}<br>Phase completed! You can proceed to the next challenge.`;
     actionArea.innerHTML = `<a href="phases.html" class="btn-cyber">PROCEED TO NEXT PHASE</a>`;
+    
+    // CRITICAL: Unlock Phase 2 immediately based on API response (DB-driven)
+    if (result.phase1_completed) {
+        // Phase 2 is now unlocked - this comes from Supabase, not localStorage
+        console.log('[PHASE1] Phase 1 completed, Phase 2 unlocked from DB');
+    }
 }

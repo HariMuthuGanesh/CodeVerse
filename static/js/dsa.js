@@ -4,7 +4,6 @@
 let phase2Timer = null;
 let timeRemaining = 900; // Default 15m
 let phaseStartedAt = null; // Date object
-let serverOffset = 0; // ms difference (server - client)
 
 document.addEventListener('DOMContentLoaded', async () => {
     await initPhase2();
@@ -63,12 +62,9 @@ function startTimer() {
     phase2Timer = setInterval(() => {
         const active = updateTimerLogic();
 
-        // Autosave every 15s (approx, based on remaining time modulo)
-        // or just use a separate interval. 
-        // Using modulo on timeRemaining is risky if time sync jumps.
-        // Better: separate interval or counter.
+        // Autosave every 15s
         if (active && timeRemaining % 15 === 0) {
-            saveState(true); // Autosave
+            saveState(); // Autosave session
         }
 
         if (!active) {
@@ -84,15 +80,17 @@ function updateTimerLogic() {
     const now = new Date();
     // Assuming client time is relatively synced or we accept drift for display.
     // Server enforces the real limit.
+    // Convert to Coordinated Universal Time (UTC) to match server
+    const nowUtc = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+
+    // Server sends UTC string. JS Date(iso) handles timezone if Z provided. 
+    // phaseStartedAt was constructed from server string.
+
     const diff = (now - phaseStartedAt) / 1000; // seconds
     const remaining = 900 - Math.floor(diff);
 
     timeRemaining = Math.max(0, remaining);
     updateTimerDisplay();
-
-    // Autosave check (e.g., every 15s check if we haven't saved recently?)
-    // Actually, we can just rely on the setInterval for a heartbeat if needed
-    // But Drag-Drop triggers save, so only time sync is needed here.
 
     return timeRemaining > 0;
 }
@@ -115,6 +113,10 @@ function lockPhase() {
         document.getElementById('result-title').textContent = "Phase Locked";
         document.getElementById('result-msg').textContent = "Time is up or you have completed this phase.";
         modal.classList.add('active');
+
+        // Remove Action Area buttons to prevent clicking "Continue"
+        const actionArea = document.getElementById('action-area');
+        if (actionArea) actionArea.innerHTML = '';
     }
     // Disable DRAG
     document.querySelectorAll('.draggable').forEach(d => d.draggable = false);
@@ -127,23 +129,15 @@ function requestAutoSave() {
     // Debounce save
     if (saveTimeout) clearTimeout(saveTimeout);
     saveTimeout = setTimeout(() => {
-        saveState(true); // Save to DB
-    }, 2000); // 2 second debounce for DB writes
+        saveState();
+    }, 2000);
 }
 
-async function saveState(saveToDb = false) {
+async function saveState() {
     // Capture state from DOM
     const bstState = captureBoardState('bst');
     const rbState = captureBoardState('rb');
     const detectiveState = captureBoardState('detective');
-
-    // Also capture current local scores to persist in state?
-    // Actually scores are updated via specific endpoints, but we should make sure state doesn't wipe them.
-    // The specific endpoints update the state scores.
-    // This payload updates the BOARD state.
-    // BEWARE: If we send {bst_score: 0} here it might overwrite.
-    // The sync endpoint merges keys. So we should NOT send 'bst_score' here unless we know it.
-    // Better: Only send header/board state here.
 
     const statePayload = {
         bst_state: bstState,
@@ -152,26 +146,20 @@ async function saveState(saveToDb = false) {
     };
 
     const payload = {
-        state: statePayload,
-        save_to_db: saveToDb
+        state: statePayload
     };
 
     try {
-        if (navigator.sendBeacon && saveToDb) {
-            const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-            navigator.sendBeacon('/api/phase2/sync', blob);
-        } else {
-            // Fire and forget usually, but await if needed
-            const res = await fetch('/api/phase2/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            // Check if server says time up
-            const d = await res.json();
-            if (d.completed) {
-                lockPhase();
-            }
+        // Fire and forget usually, but await if needed
+        const res = await fetch('/api/phase2/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const d = await res.json();
+        if (d.completed) {
+            lockPhase();
         }
     } catch (e) {
         console.error("Save Error", e);
@@ -205,8 +193,6 @@ function captureBoardState(prefix) {
             });
         }
     }
-    // Detective: Items in Bank vs Slot?
-    // We only save SLOTTED items. Bank items are re-generated or found.
     return state;
 }
 
@@ -227,15 +213,12 @@ function restoreBoard(prefix, state) {
             const node = document.getElementById(item.id);
             if (node) {
                 node.style.backgroundColor = item.color;
-                // Update text color for contrast if white/black logic is simple
-                // Text is white, if BG is white?? No, Red/Black. 
-                // Red BG -> White Text. Black BG -> White Text.
             }
         });
         return;
     }
 
-    // Clear slots first?
+    // Clear slots first
     for (let i = 1; i <= 7; i++) {
         const slot = document.getElementById(`${prefix}-slot-${i}`);
         if (slot) slot.innerHTML = '';
@@ -248,11 +231,11 @@ function restoreBoard(prefix, state) {
         // If not found (Detective generated items), we might need to recreate or find in bank
         if (!draggable) {
             draggable = document.querySelector(`.draggable[data-value="${item.value}"]`);
+            if (!draggable) {
+                // Should exist but just in case
+                return;
+            }
         }
-
-        // For Detective Initial Broken tree, nodes are created by initBrokenTree.
-        // If we have state, we might need to find them or create them.
-        // Simplest: If ID exists, move it.
 
         if (draggable && slot) {
             slot.appendChild(draggable);
@@ -269,6 +252,8 @@ function initDragAndDrop() {
     const banks = document.querySelectorAll('.bank-container');
 
     draggables.forEach(d => {
+        // Avoid adding multiple listeners if re-init
+        // Clone to clear listeners
         const newD = d.cloneNode(true);
         d.parentNode.replaceChild(newD, d);
 
@@ -317,7 +302,6 @@ function initDragAndDrop() {
                     zone.appendChild(draggingItem);
                 }
             }
-            // Logic handled by dragend listener
         };
     });
 }
@@ -325,51 +309,41 @@ function initDragAndDrop() {
 // --- GAME LOGIC ---
 
 async function validateBST() {
-    const result = DSATree.validateBSTFromUI('bst');
-    if (result.valid) {
-        displayResult("Correct!", "BST Logic Verified.", true);
-        await helpers.submitBST(true);
-    } else {
-        displayResult("Invalid", result.error, false);
-        await helpers.submitBST(false);
-    }
+    // Client Side Check (Fast Feedback)
+    // Optional: we can remove this and rely purely on server, but good UX to show "Analysing..."
+    // Let's rely on server for the authoritative check.
+
+    // We still use client text to show "Verifying..."
+    displayResult("Verifying...", "Analyzing Temporal structure...", true);
+    document.getElementById('action-area').innerHTML = ''; // Hide buttons while loading
+
+    await helpers.submitBST(); // Sends state
 }
 
 async function validateDetective() {
-    const result = DSATree.validateBSTFromUI('detective');
-    if (result.valid) {
-        displayResult("Fixed!", "Detective Challenge Complete.", true);
-        await helpers.submitDetective(true);
-    } else {
-        displayResult("Incorrect", result.error, false);
-        await helpers.submitDetective(false);
-    }
+    displayResult("Verifying...", "Analyzing Anomalies...", true);
+    document.getElementById('action-area').innerHTML = '';
+    await helpers.submitDetective();
 }
 
 async function validateRB() {
-    const result = DSATree.validateRBFromUI();
-    if (result.valid) {
-        displayResult("Correct!", "Red-Black Tree Verified.", true);
-        await helpers.completeRB();
-    } else {
-        displayResult("Invalid", result.error, false);
-    }
+    displayResult("Verifying...", "Checking Quantum Stability...", true);
+    document.getElementById('action-area').innerHTML = '';
+    await helpers.completeRB();
 }
 
 async function pauseGame() {
-    // Just save and show modal
-    await saveState(true);
+    await saveState();
     document.getElementById('pause-modal').classList.add('active');
 }
 
 function resumeGame() {
     document.getElementById('pause-modal').classList.remove('active');
-    // Timer keeps running in background (server time), so we just resume UI updates
     updateTimerLogic();
 }
 
 async function saveAndExit() {
-    await saveState(true);
+    await saveState();
     window.location.href = 'phases.html';
 }
 
@@ -386,53 +360,125 @@ function closeConfirm() {
 }
 
 async function confirmExit() {
-    await saveState(true); // Final State Save
-    await fetch('/api/phase2/exit', { method: 'POST' });
+    await saveState(); // Final State Save
+    
+    // CRITICAL: Get phase completion status from API response (DB-driven)
+    try {
+        const res = await fetch('/api/phase2/exit', { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            // Phase 3 is now unlocked - this comes from Supabase, not localStorage
+            console.log('[PHASE2] Phase 2 completed, Phase 3 unlocked from DB:', {
+                phase2_completed: data.phase2_completed,
+                phase3_completed: data.phase3_completed
+            });
+        } else {
+            console.error('[PHASE2] Exit failed:', data.error);
+            alert('Failed to complete Phase 2: ' + (data.error || 'Unknown error'));
+            return;
+        }
+    } catch (error) {
+        console.error('[PHASE2] Exit error:', error);
+        alert('Error completing Phase 2. Please try again.');
+        return;
+    }
+    
     window.location.href = 'phases.html';
 }
 
 function displayResult(title, msg, success) {
     const m = document.getElementById('result-modal');
-    document.getElementById('result-title').textContent = title;
-    document.getElementById('result-msg').textContent = msg;
-    document.getElementById('result-title').style.color = success ? 'var(--accent-avengers)' : 'var(--accent-red-bright)';
+    const tEl = document.getElementById('result-title');
+    const mEl = document.getElementById('result-msg');
 
-    // Add close button
+    tEl.textContent = title;
+    mEl.textContent = msg;
+    tEl.style.color = success ? 'var(--accent-avengers)' : 'var(--accent-red-bright)';
+
+    // Add close button if not locked
     const actionArea = document.getElementById('action-area');
-    if (actionArea) {
+    if (actionArea && !document.body.classList.contains('phase-locked')) {
         actionArea.innerHTML = `<button class="btn-action" onclick="document.getElementById('result-modal').classList.remove('active')">CONTINUE</button>`;
     }
 
     m.classList.add('active');
 }
 
-function updateScoreDisplay(str) {
-    document.getElementById('score-display').textContent = `Phase 2 Score: ${str}`;
+function updateScoreDisplay(val) {
+    document.getElementById('score-display').textContent = `Phase 2 Score: ${val}`;
 }
 
+// --- HELPERS (API) ---
+
 const helpers = {
-    submitBST: async (correct) => {
+    submitBST: async () => {
+        // Collect Slots
+        const slots = {};
+        for (let i = 1; i <= 7; i++) {
+            const slot = document.getElementById(`bst-slot-${i}`);
+            if (slot && slot.children.length > 0) {
+                slots[i] = parseInt(slot.children[0].dataset.value);
+            }
+        }
+
         const res = await fetch('/api/bst/submit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ correct })
+            body: JSON.stringify({ slots: slots })
         });
         const d = await res.json();
-        if (d.success) updateScoreDisplay(d.total_phase2_score || d.score); // Handler
+
+        displayResult(d.valid ? "Correct!" : "Invalid Structure", d.message, d.valid);
+
+        // Update total score from d.score (which is just this component score). 
+        // We might want to fetch full score or just trust UI update?
+        // Let's refetch sync to be safe or just trigger sync
+        requestAutoSave();
+        // Manually update UI score if we knew total, but sync will handle it or we can just update this part
+        // The displayResult is mostly what matters.
     },
-    submitDetective: async (correct) => {
+
+    submitDetective: async () => {
+        const slots = {};
+        for (let i = 1; i <= 7; i++) {
+            const slot = document.getElementById(`detective-slot-${i}`);
+            if (slot && slot.children.length > 0) {
+                slots[i] = parseInt(slot.children[0].dataset.value);
+            }
+        }
+
         const res = await fetch('/api/detective/submit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ correct })
+            body: JSON.stringify({ slots: slots })
         });
         const d = await res.json();
-        if (d.success) updateScoreDisplay(d.total_phase2_score || d.score);
+
+        displayResult(d.valid ? "Fixed!" : "Not Quite...", d.message, d.valid);
+        requestAutoSave();
     },
+
     completeRB: async () => {
-        const res = await fetch('/api/rb/complete', { method: 'POST' });
+        // Collect Nodes
+        const nodes = [];
+        document.querySelectorAll('.rb-node').forEach(n => {
+            nodes.push({
+                id: n.id, // rb-node-1
+                color: n.style.backgroundColor || 'black',
+                value: parseInt(n.dataset.value)
+            });
+        });
+
+        const res = await fetch('/api/rb/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodes: nodes })
+        });
         const d = await res.json();
-        if (d.success) updateScoreDisplay(d.total_phase2_score || d.score);
+
+        displayResult(d.valid ? "Stable!" : "Unstable", d.message, d.valid);
+        requestAutoSave();
     }
 };
 
@@ -445,15 +491,22 @@ function showChallenge(type) {
 
 // Logic for Broken Tree Init
 function initBrokenTree() {
+    // Only init if empty?
+    const s1 = document.getElementById('detective-slot-1');
+    if (s1 && s1.children.length > 0) return; // Already populated
+
     const config = [
         { slot: 1, val: 50, id: 'd-node-50' },
         { slot: 2, val: 30, id: 'd-node-30' },
         { slot: 3, val: 70, id: 'd-node-70' },
         { slot: 4, val: 20, id: 'd-node-20' },
-        { slot: 5, val: 60, id: 'd-node-60' }, // ERROR
-        { slot: 6, val: 40, id: 'd-node-40' }, // ERROR
+        { slot: 5, val: 60, id: 'd-node-60' }, // ERROR: 60 > 50 (Root), should be right of 50. But it's in left subtree (child of 30, right child). 30->60. 60>30 ok. But 60 > 50 (grandparent). Violation!
+        { slot: 6, val: 40, id: 'd-node-40' }, // ERROR: 40 < 50. In right subtree (child of 70). 70->40. 40<70 ok. But 40 < 50 (grandprant). Violation!
         { slot: 7, val: 80, id: 'd-node-80' }
     ];
+    // This creates "Deep Violations" as requested.
+    // 60 is right child of 30. Valid local (60>30). Invalid global (60 > 50, but in Left subtree).
+
     const bank = document.getElementById('detective-bank');
     if (bank) bank.innerHTML = '<p style="color: #666; font-size: 0.8rem; align-self: center;">Drag nodes here temporarily if needed</p>';
 
@@ -471,18 +524,20 @@ function initBrokenTree() {
         if (slot) slot.appendChild(div);
     });
 }
+
 function toggleColor(el) {
     if (document.body.classList.contains('phase-locked')) return;
 
-    // Toggle between black and red
-    // Default in HTML is style="background:black;"
+    // Toggle
     const currentColor = el.style.backgroundColor;
-    if (currentColor === 'black' || currentColor === '') {
+    if (currentColor === 'black' || currentColor === '' || currentColor === 'rgb(0, 0, 0)') {
         el.style.backgroundColor = '#AA0000'; // Red
         el.style.borderColor = 'white';
     } else {
         el.style.backgroundColor = 'black';
         el.style.borderColor = 'white';
     }
+
+    // Auto sync state (transient)
     requestAutoSave();
 }

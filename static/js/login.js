@@ -31,6 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
+                        // CRITICAL: Phase unlock comes ONLY from backend response (DB-driven)
+                        // Do NOT use localStorage for phase completion status
+                        console.log('[LOGIN] Phase status from DB:', {
+                            phase1_completed: data.phase1_completed,
+                            phase2_completed: data.phase2_completed,
+                            phase3_completed: data.phase3_completed
+                        });
+                        
                         // Add a cinematic exit effect
                         const btn = loginForm.querySelector('button[type="submit"]');
                         btn.innerHTML = "ACCESS GRANTED";

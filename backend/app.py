@@ -6,7 +6,7 @@ import os
 import io
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Initialize Flask App
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,21 +16,22 @@ STATIC_DIR = os.path.join(PARENT_DIR, 'static')
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.environ.get('SECRET_KEY', 'AVENGERS_ASSEMBLE_SECRET_KEY')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2) # Keep session alive
 CORS(app)
 
-# Supabase Configuration
+# Supabase Configuration - MANDATORY: Use service_role key only
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')
 
 supabase: Client = None
-if SUPABASE_URL and SUPABASE_KEY:
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+        app.logger.info(f"[SUPABASE] Initialized successfully with URL: {SUPABASE_URL}")
     except Exception as e:
-        print(f"Supabase Init Error: {e}")
-
-# Configuration
-PASSING_SCORE = 0
+        app.logger.error(f"[SUPABASE INIT ERROR] {str(e)}")
+else:
+    app.logger.warning(f"[SUPABASE] Missing configuration - URL: {bool(SUPABASE_URL)}, KEY: {bool(SUPABASE_SERVICE_KEY)}")
 
 # Routes
 @app.route('/')
@@ -43,491 +44,484 @@ def login_page():
 
 @app.route('/phases.html')
 def phases():
-    if not session.get('rollno'):
-        return render_template('login.html')
+    if not session.get('user_email'):
+        return redirect('/login.html')
     return render_template('phases.html')
 
 @app.route('/quiz.html')
 def quiz_page():
+    if not session.get('user_email'): return redirect('/login.html')
     return render_template('quiz.html')
 
 @app.route('/dsa.html')
 def dsa_page():
-    # Check if user has completed/locked Phase 2
-    if session.get('phase2_completed'):
-         # Allow viewing if completed? Or redirect?
-         # User request: "If remaining == 0: Lock Phase-2 permanently".
-         # Usually best to stay on page but show locked state.
-         pass
+    if not session.get('user_email'): return redirect('/login.html')
     return render_template('dsa.html')
 
 @app.route('/final.html')
 def final_page():
+    if not session.get('user_email'): return redirect('/login.html')
     return render_template('final.html')
 
 @app.route('/score.html')
 def score_page():
+    if not session.get('user_email'): return redirect('/login.html')
     return render_template('score.html')
 
 @app.route('/static/<path:filename>')
 def static_files(filename):
     return send_from_directory(STATIC_DIR, filename)
 
-@app.route('/api/test', methods=['GET'])
-def test_api():
-    return jsonify({"status": "ok", "message": "API is working", "questions_count": len(QUIZ_QUESTIONS)})
+# --- HELPER FUNCTIONS ---
 
-# API Endpoints
+def get_utc_now_iso():
+    return datetime.utcnow().isoformat()
+
+def db_upsert_participant(email, data):
+    """
+    Safe idempotent upsert to Supabase with verification.
+    Returns (success: bool, error: str or None)
+    """
+    if not supabase:
+        app.logger.error(f"[DB WRITE] Supabase client not initialized")
+        return False, "Supabase not initialized"
+    
+    try:
+        payload = {"email": email}
+        payload.update(data)
+        payload["updated_at"] = get_utc_now_iso()
+        
+        app.logger.info(f"[DB WRITE] Attempting upsert for email={email}, data={data}")
+        
+        res = supabase.table('participants').upsert(payload, on_conflict='email').execute()
+        
+        # CRITICAL: Verify write success
+        if res.data is None or (isinstance(res.data, list) and len(res.data) == 0):
+            error_msg = f"Supabase returned no data. Error: {getattr(res, 'error', 'Unknown')}"
+            app.logger.error(f"[DB ERROR] {error_msg}")
+            return False, error_msg
+        
+        app.logger.info(f"[DB SUCCESS] Upsert successful for email={email}, returned {len(res.data) if isinstance(res.data, list) else 1} row(s)")
+        return True, None
+        
+    except Exception as e:
+        error_msg = f"Supabase Update Failed: {str(e)}"
+        app.logger.error(f"[DB ERROR] {error_msg}")
+        return False, error_msg
+
+def check_phase2_timer():
+    """Returns (is_active, seconds_remaining)."""
+    if session.get('phase2_completed'):
+        return False, 0
+    
+    start_str = session.get('phase2_started_at')
+    if not start_str:
+        return True, 900 # Not started yet formal? Treated as fresh.
+        
+    try:
+        if start_str.endswith('Z'): start_str = start_str[:-1]
+        start_time = datetime.fromisoformat(start_str)
+        elapsed = (datetime.utcnow() - start_time).total_seconds()
+        remaining = max(0, 900 - int(elapsed))
+        
+        if remaining == 0:
+            session['phase2_completed'] = True
+            return False, 0
+        return True, remaining
+    except:
+        return True, 900
+
+# --- AUTH & PHASE 1 ---
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.json
     username = data.get('username')
-    rollno = data.get('rollno')
     email = data.get('email')
-
-    if not all([username, rollno, email]):
+    
+    app.logger.info(f"[LOGIN] Attempt for email={email}, username={username}")
+    
+    if not email or not username:
+        app.logger.warning(f"[LOGIN] Missing fields - email: {bool(email)}, username: {bool(username)}")
         return jsonify({"error": "Missing fields"}), 400
 
-    # Store in session
-    session['username'] = username
-    session['rollno'] = rollno
-    session['email'] = email
+    session.permanent = True
+    session['user_email'] = email
+    session['user_name'] = username
     
     # Defaults
-    session['phase1_score'] = 0
     session['phase1_completed'] = False
-    session['phase3_score'] = 0
-    
-    # Phase 2 Specifics (Option B)
-    session['phase2_score'] = 0
-    session['phase2_state'] = {}
-    session['phase2_started_at'] = None
     session['phase2_completed'] = False
-    session['phase2_time_left'] = 900
+    session['phase3_completed'] = False
     
-    # Internal component scores (transient in session, persisted in phase2_state)
-    session['bst_score'] = 0
-    session['rb_score'] = 0
-    session['detective_score'] = 0
-
-    # Retrieve past scores from Supabase to restore session state
-    if supabase:
-        try:
-            # Check if user exists
-            response = supabase.table('participants').select("*").eq('email', email).execute()
-            data_rows = response.data
-            
-            # SESSION FLAG: Mark this session as having valid DB data
-            session['db_synced'] = True
-            
-            if data_rows:
-                user_data = data_rows[0]
-                
-                # Phase 1 Restoration
-                p1_score = user_data.get('phase1_score')
-                if p1_score is not None:
-                    session['phase1_score'] = p1_score
-                    session['phase1_completed'] = True
-                else:
-                    session['phase1_score'] = 0
-                    session['phase1_completed'] = False
-                
-                # Phase 2 Restoration - STRICT OPTION B
-                session['phase2_score'] = user_data.get('phase2_score', 0)
-                session['phase2_state'] = user_data.get('phase2_state', {})
-                session['phase2_started_at'] = user_data.get('phase2_started_at')
-                session['phase2_completed'] = user_data.get('phase2_completed', False)
-                session['phase2_time_left'] = user_data.get('phase2_time_left', 900)
-                
-                # Restore internal scores for calculation
-                state = session['phase2_state'] or {}
-                session['bst_score'] = state.get('bst_score', 0)
-                session['rb_score'] = state.get('rb_score', 0)
-                session['detective_score'] = state.get('detective_score', 0)
-
-                # Timer Calculation
-                if session['phase2_started_at']:
-                    try:
-                        start_str = session['phase2_started_at']
-                        if start_str.endswith('Z'): start_str = start_str[:-1]
-                        
-                        # Handle both with and without microseconds
-                        try:
-                            start_time = datetime.fromisoformat(start_str)
-                        except ValueError:
-                            # Fallback if format is slightly different
-                             start_time = datetime.strptime(start_str.split('.')[0], "%Y-%m-%dT%H:%M:%S")
-
-                        # Valid start time found
-                        elapsed = (datetime.utcnow() - start_time).total_seconds()
-                        remaining = max(0, 900 - int(elapsed))
-                        session['phase2_time_left'] = remaining
-                        
-                        if remaining == 0 and not session['phase2_completed']:
-                             session['phase2_completed'] = True
-                             # Logic to sync completion state back to DB later or now?
-                             # We'll rely on next sync or exit
-                             # But let's set it in session so UI locks immediately
-                    except Exception as e:
-                        print(f"Timer Parse Error: {e}")
-                        session['phase2_time_left'] = 900
-                
-                # Phase 3
-                if user_data.get('phase3_score') is not None:
-                    session['phase3_score'] = user_data['phase3_score']
-                    session['phase3_completed'] = True
-            
-        except Exception as e:
-            print(f"Login Supabase Error: {e}")
-            return jsonify({"error": "Database Unavailable. Please try again."}), 503
-    else:
-        session['db_synced'] = False 
-
-    return jsonify({"success": True})
-
-@app.route('/api/status', methods=['GET'])
-def get_status():
-    phase1_completed = session.get('phase1_completed', False)
-    phase2_completed = session.get('phase2_completed', False)
+    # 1. UPSERT SIGNUP - Verify write
+    success, error = db_upsert_participant(email, {"name": username})
+    if not success:
+        app.logger.error(f"[LOGIN] Failed to upsert participant: {error}")
+        return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
     
-    # Recalculate Timer if Phase 2 started
-    if session.get('phase2_started_at') and not phase2_completed:
-        try:
-             start_str = session['phase2_started_at']
-             if start_str.endswith('Z'): start_str = start_str[:-1]
-             start_time = datetime.fromisoformat(start_str)
-             elapsed = (datetime.utcnow() - start_time).total_seconds()
-             remaining = max(0, 900 - int(elapsed))
-             session['phase2_time_left'] = remaining
-             if remaining <= 0:
-                 session['phase2_completed'] = True
-                 phase2_completed = True
-        except:
-            pass
+    # 2. FETCH PARTICIPANT ROW - Derive phase completion from DB only
+    phase1_completed = False
+    phase2_completed = False
+    phase3_completed = False
+    
+    try:
+        if supabase:
+            res = supabase.table('participants').select('*').eq('email', email).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                session['phase1_score'] = row.get('phase1_score') or 0
+                session['phase2_score'] = row.get('phase2_score') or 0
+                session['phase3_score'] = row.get('phase3_score') or 0
+                
+                # Derive phase completion from DB only (score is not None means completed)
+                phase1_completed = row.get('phase1_score') is not None and row.get('phase1_score', 0) > 0
+                phase2_completed = row.get('phase2_score') is not None and row.get('phase2_score', 0) > 0
+                phase3_completed = row.get('phase3_score') is not None and row.get('phase3_score', 0) > 0
+                
+                session['phase1_completed'] = phase1_completed
+                session['phase2_completed'] = phase2_completed
+                session['phase3_completed'] = phase3_completed
+                
+                app.logger.info(f"[LOGIN] Loaded participant - Phase1: {phase1_completed}, Phase2: {phase2_completed}, Phase3: {phase3_completed}")
+            else:
+                app.logger.warning(f"[LOGIN] No participant row found after upsert for email={email}")
+    except Exception as e:
+        app.logger.error(f"[LOGIN] Error fetching participant: {str(e)}")
+        return jsonify({"success": False, "error": f"Failed to fetch participant data: {str(e)}"}), 500
 
-    user_status = {
+    app.logger.info(f"[LOGIN] Success for email={email}")
+    
+    # MANDATORY: Return phase completion flags
+    return jsonify({
+        "success": True,
         "phase1_completed": phase1_completed,
         "phase2_completed": phase2_completed,
-        "phase3_completed": session.get('phase3_completed', False),
-        "phase1_unlocked": True,
-        "phase2_unlocked": phase1_completed,
-        "phase3_unlocked": phase2_completed,
-        "phase1_score": session.get('phase1_score', 0),
-        "phase2_score": session.get('phase2_score', 0),
-        "phase3_score": session.get('phase3_score', 0),
-        
-        # Detailed Phase 2 Status for Persistence
-        "phase2_details": {
-             "time_left": session.get('phase2_time_left', 900),
-             "started_at": session.get('phase2_started_at'),
-             "state": session.get('phase2_state', {}),
-             "completed": phase2_completed
-        }
-    }
-    return jsonify(user_status)
+        "phase3_completed": phase3_completed
+    })
 
 @app.route('/api/quiz', methods=['GET'])
 def get_quiz():
-    try:
-        questions_client = [
-            {
-                "id": q["id"],
-                "question": q["question"],
-                "options": q["options"]
-            }
-            for q in QUIZ_QUESTIONS
-        ]
-        response = jsonify(questions_client)
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        return response
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    return jsonify([
+        {"id": q["id"], "question": q["question"], "options": q["options"]} 
+        for q in QUIZ_QUESTIONS
+    ])
 
 @app.route('/api/submit-quiz', methods=['POST'])
 def submit_quiz():
+    email = session.get('user_email')
+    if not email:
+        app.logger.warning(f"[PHASE1] Submit attempt without authentication")
+        return jsonify({"success": False, "error": "Authentication required"}), 401
+    
     data = request.json
     answers = data.get('answers', {})
-    
     score = 0
-    results = []
     
     for q in QUIZ_QUESTIONS:
-        qid = q['id']
-        user_ans = answers.get(str(qid)) or answers.get(qid)
-        if user_ans == q['answer']:
-            score += 1
-            
-    points = score * 5
+        if answers.get(str(q['id'])) == q['answer']:
+            score += 5
     
+    app.logger.info(f"[PHASE1] Submission for email={email}, score={score}")
+    
+    session['phase1_score'] = score
     session['phase1_completed'] = True
-    session['phase1_score'] = points
     
-    if session.get('email') and supabase:
-        try:
-            current_total = points + session.get('phase2_score', 0) + session.get('phase3_score', 0)
-            user_data = {
-                "name": session.get('username'),
-                "email": session.get('email'),
-                "phase1_score": points,
-                "total_score": current_total,
-                "updated_at": datetime.utcnow().isoformat()
-            }
-            # Remove phase1_status column requirement
-            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
-        except Exception as e:
-            print(f"Supabase Error submit-quiz: {e}")
-            
-    return jsonify({"success": True, "score": points})
+    # COMPLETE PHASE 1 - DB UPDATE with verification
+    total = score + session.get('phase2_score', 0) + session.get('phase3_score', 0)
+    success, error = db_upsert_participant(email, {
+        "phase1_score": score,
+        "total_score": total
+    })
+    
+    if not success:
+        app.logger.error(f"[PHASE1] DB write failed for email={email}: {error}")
+        return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
+    
+    app.logger.info(f"[PHASE1] Successfully saved score={score} for email={email}")
+    
+    # MANDATORY: Return completion flags
+    total_questions = len(QUIZ_QUESTIONS)
+    return jsonify({
+        "success": True,
+        "score": score // 5,  # Number of correct answers
+        "total": total_questions,
+        "phase1_completed": True,
+        "phase2_completed": False,  # Phase 2 unlocks after Phase 1
+        "phase3_completed": session.get('phase3_completed', False)
+    })
 
-# --- PHASE 2 NEW ENDPOINTS (OPTION B STRICT) ---
+# --- PHASE 2 CORE ---
 
 @app.route('/api/phase2/sync', methods=['POST'])
 def sync_phase2():
-    """Syncs Timer, Board State, and Handles Auto-Start"""
-    data = request.json
-    client_state = data.get('state') 
+    """Main heartbeat: Updates session state, checks timer."""
+    if not session.get('user_email'): return jsonify({"error": "Auth required"}), 401
     
-    # 1. Start Phase if not started
-    if not session.get('phase2_started_at'):
-        start_time = datetime.utcnow().isoformat()
-        session['phase2_started_at'] = start_time
-        session['phase2_time_left'] = 900
-        save_phase2_progress() 
-
-    # 2. Update Timer
-    remaining = 900
-    try:
-        start_str = session['phase2_started_at']
-        if start_str.endswith('Z'): start_str = start_str[:-1]
-        start_time = datetime.fromisoformat(start_str)
-        elapsed = (datetime.utcnow() - start_time).total_seconds()
-        remaining = max(0, 900 - int(elapsed))
-        session['phase2_time_left'] = remaining
-    except Exception as e:
-        print(f"Timer check fail: {e}")
-        remaining = 900
-
-    # 3. Check Expiry
-    if remaining <= 0 or session.get('phase2_completed'):
-        session['phase2_completed'] = True
-        session['phase2_time_left'] = 0
-        save_phase2_progress()
-        return jsonify({
-            "success": True, 
-            "completed": True, 
-            "time_left": 0,
-            "message": "Time Up"
-        })
-
-    # 4. Update State if provided
-    if client_state:
-        current = session.get('phase2_state') or {}
-        if isinstance(client_state, dict):
-             current.update(client_state)
-             session['phase2_state'] = current
-        save_phase2_progress()
+    # Auto Start if first time
+    if not session.get('phase2_started_at') and not session.get('phase2_completed'):
+        session['phase2_started_at'] = get_utc_now_iso()
+        session['bst_score'] = 0
+        session['rb_score'] = 0
+        session['detective_score'] = 0
+    
+    # Check Timer
+    active, remaining = check_phase2_timer()
+    
+    # Update Session State (Transient)
+    client_state = request.json.get('state')
+    if active and client_state:
+        # Merge state into session
+        current = session.get('phase2_state', {})
+        current.update(client_state)
+        session['phase2_state'] = current
 
     return jsonify({
         "success": True,
+        "started_at": session.get('phase2_started_at'),
         "time_left": remaining,
-        "completed": False,
-        "started_at": session['phase2_started_at'],
+        "completed": session.get('phase2_completed', False),
         "state": session.get('phase2_state')
     })
 
+# --- PHASE 2 VALIDATION HANDLERS (STRICT SERVER-SIDE) ---
+
+def validate_bst_logic(slots):
+    # expect { "1": val, "2": val... }
+    # indices 1-7
+    try:
+        nodes = {int(k): int(v) for k,v in slots.items() if v}
+    except:
+        return False, "Invalid Data"
+
+    if len(nodes) < 7: return False, "Incomplete Tree"
+
+    def is_bst(idx, min_val, max_val):
+        if idx not in nodes: return True
+        val = nodes[idx]
+        if not (min_val < val < max_val): return False
+        return is_bst(2*idx, min_val, val) and is_bst(2*idx+1, val, max_val)
+
+    if is_bst(1, float('-inf'), float('inf')):
+        return True, "Valid"
+    return False, "BST Property Violated"
+
+def validate_rb_logic(node_list):
+    # expect [{'id': 'rb-node-1', 'color': 'red', 'value': 40}, ...]
+    # Build tree structure
+    
+    # Fixed Values in UI: 1=40, 2=20, 3=60, 4=10, 5=30, 6=50, 7=70
+    id_map = {1: 40, 2: 20, 3: 60, 4: 10, 5: 30, 6: 50, 7: 70}
+    
+    colors = {} # id -> 'red'/'black'
+    for n in node_list:
+        try:
+            # Match rb-node-1 -> 1
+            if 'rb-node-' in n['id']:
+                nid = int(n['id'].replace('rb-node-', ''))
+                # frontend sends generic style string often
+                c_str = n.get('color', '').lower()
+                # If background is black or empty or rgb(0,0,0) -> Black.
+                # If red or #AA0000 -> Red.
+                is_red = 'red' in c_str or 'aa0000' in c_str
+                colors[nid] = 'red' if is_red else 'black'
+        except: pass
+
+    # 1. Root Black
+    if colors.get(1, 'black') != 'black': return False, "Root must be BLACK"
+
+    # 2. Red-Red Check & Black Height
+    def check_rb(nid):
+        if nid not in id_map: return True, 1 # Valid, height 1
+        
+        c = colors.get(nid, 'black')
+        
+        l_id, r_id = 2*nid, 2*nid+1
+        
+        l_valid, l_bh = check_rb(l_id)
+        r_valid, r_bh = check_rb(r_id)
+        
+        if not l_valid or not r_valid: return False, 0
+        
+        # Red-Red
+        if c == 'red':
+            if colors.get(l_id, 'black') == 'red': return False, 0
+            if colors.get(r_id, 'black') == 'red': return False, 0
+        
+        # Black Height
+        if l_bh != r_bh: return False, 0
+        
+        return True, l_bh + (1 if c == 'black' else 0)
+
+    valid, _ = check_rb(1)
+    if valid: return True, "Valid"
+    return False, "Violation Detected"
+
 @app.route('/api/bst/submit', methods=['POST'])
 def submit_bst():
-    if session.get('phase2_completed'): return jsonify({"success": False, "message": "Phase Locked"})
+    active, _ = check_phase2_timer()
+    if not active: return jsonify({"success": False, "message": "Locked"})
     
     data = request.json
-    correct = data.get('correct', False)
+    slots = data.get('slots', {}) # Map of slot_index -> value
     
-    state = session.get('phase2_state') or {}
-    state['bst_score'] = 40 if correct else 0
-    session['phase2_state'] = state # Update session
-    session['bst_score'] = 40 if correct else 0 # Update local session for display
+    valid, msg = validate_bst_logic(slots)
     
-    calc_phase2_score()
-    save_phase2_progress()
-    return jsonify({"success": True, "score": state['bst_score']})
-
-@app.route('/api/rb/complete', methods=['POST'])
-def complete_rb():
-    if session.get('phase2_completed'): return jsonify({"success": False, "message": "Phase Locked"})
-
-    state = session.get('phase2_state') or {}
-    state['rb_score'] = 40
+    points = 40 if valid else 0
+    session['bst_score'] = points
+    
+    # Store points in state for persistence
+    state = session.get('phase2_state', {})
+    state['bst_score'] = points
     session['phase2_state'] = state
-    session['rb_score'] = 40
     
-    calc_phase2_score()
-    save_phase2_progress()
-    return jsonify({"success": True})
+    return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
 @app.route('/api/detective/submit', methods=['POST'])
 def submit_detective():
-    if session.get('phase2_completed'): return jsonify({"success": False, "message": "Phase Locked"})
-
+    active, _ = check_phase2_timer()
+    if not active: return jsonify({"success": False, "message": "Locked"})
+    
     data = request.json
-    correct = data.get('correct', False)
+    slots = data.get('slots', {})
     
-    state = session.get('phase2_state') or {}
-    state['detective_score'] = 20 if correct else 0
+    valid, msg = validate_bst_logic(slots)
+    
+    points = 20 if valid else 0
+    session['detective_score'] = points
+    
+    state = session.get('phase2_state', {})
+    state['detective_score'] = points
     session['phase2_state'] = state
-    session['detective_score'] = 20 if correct else 0
-    
-    calc_phase2_score()
-    save_phase2_progress()
-    return jsonify({"success": True, "score": state['detective_score']})
 
-def calc_phase2_score():
-    state = session.get('phase2_state') or {}
-    total = state.get('bst_score', 0) + state.get('rb_score', 0) + state.get('detective_score', 0)
-    session['phase2_score'] = total
+    return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
+
+@app.route('/api/rb/complete', methods=['POST'])
+def complete_rb():
+    active, _ = check_phase2_timer()
+    if not active: return jsonify({"success": False, "message": "Locked"})
+    
+    data = request.json
+    nodes = data.get('nodes', [])
+    
+    valid, msg = validate_rb_logic(nodes)
+    
+    points = 40 if valid else 0
+    session['rb_score'] = points
+    
+    state = session.get('phase2_state', {})
+    state['rb_score'] = points
+    session['phase2_state'] = state
+
+    return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
 @app.route('/api/phase2/exit', methods=['POST'])
 def exit_phase2():
+    email = session.get('user_email')
+    if not email:
+        app.logger.warning(f"[PHASE2] Exit attempt without authentication")
+        return jsonify({"success": False, "error": "Authentication required"}), 401
+    
+    # COMPLETE PHASE 2
     session['phase2_completed'] = True
-    calc_phase2_score()
-    save_phase2_progress()
-    return jsonify({"success": True})
-
-def save_phase2_progress():
-    if not session.get('email') or not supabase: return
-
-    try:
-        user_data = {
-            "email": session.get('email'),
-            "phase2_score": session.get('phase2_score', 0),
-            "phase2_state": session.get('phase2_state', {}),
-            "phase2_started_at": session.get('phase2_started_at'),
-            "phase2_time_left": session.get('phase2_time_left'),
-            "phase2_completed": session.get('phase2_completed', False),
-            "total_score": session.get('phase1_score', 0) + session.get('phase2_score', 0) + session.get('phase3_score', 0),
-            "updated_at": datetime.utcnow().isoformat()
-        }
-        if session.get('username'):
-            user_data['name'] = session.get('username')
-        supabase.table('participants').upsert(user_data, on_conflict='email').execute()
-    except Exception as e:
-        print(f"Supabase Save Error: {e}")
+    
+    p2_score = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
+    session['phase2_score'] = p2_score
+    
+    app.logger.info(f"[PHASE2] Exit for email={email}, score={p2_score}")
+    
+    total = session.get('phase1_score', 0) + p2_score + session.get('phase3_score', 0)
+    success, error = db_upsert_participant(email, {
+        "phase2_score": p2_score,
+        "total_score": total
+    })
+    
+    if not success:
+        app.logger.error(f"[PHASE2] DB write failed for email={email}: {error}")
+        return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
+    
+    app.logger.info(f"[PHASE2] Successfully saved score={p2_score} for email={email}")
+    
+    # MANDATORY: Return completion flags
+    return jsonify({
+        "success": True,
+        "phase2_completed": True,
+        "phase3_completed": False,  # Phase 3 unlocks after Phase 2
+        "phase1_completed": session.get('phase1_completed', False)
+    })
 
 @app.route('/api/complete-phase-2', methods=['POST'])
-def complete_phase_2():
+def complete_phase_2_alt():
     return exit_phase2()
+
+# --- PHASE 3 ---
 
 @app.route('/api/complete-phase-3', methods=['POST'])
 def complete_phase_3():
+    email = session.get('user_email')
+    if not email:
+        app.logger.warning(f"[PHASE3] Submit attempt without authentication")
+        return jsonify({"success": False, "error": "Authentication required"}), 401
+    
     data = request.json or {}
     points = data.get('points', 0)
     
-    session['phase3_started'] = True
+    app.logger.info(f"[PHASE3] Submission for email={email}, points={points}")
+    
     session['phase3_score'] = points
+    session['phase3_completed'] = True
     
-    if session.get('email') and supabase:
-        try:
-            current_total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + points
-            user_data = {
-                "name": session.get('username'),
-                "email": session.get('email'),
-                "phase3_score": points,
-                "total_score": current_total,
-                 "updated_at": datetime.utcnow().isoformat()
-            }
-            supabase.table('participants').upsert(user_data, on_conflict='email').execute()
-        except Exception as e:
-            print(f"Supabase Error complete-phase-3: {e}")
+    # COMPLETE PHASE 3 - DB UPDATE with verification
+    total = session.get('phase1_score', 0) + session.get('phase2_score', 0) + points
+    success, error = db_upsert_participant(email, {
+        "phase3_score": points,
+        "total_score": total
+    })
     
+    if not success:
+        app.logger.error(f"[PHASE3] DB write failed for email={email}: {error}")
+        return jsonify({"success": False, "error": f"Database write failed: {error}"}), 500
+    
+    app.logger.info(f"[PHASE3] Successfully saved points={points} for email={email}")
+    
+    # MANDATORY: Return completion flags
     return jsonify({
         "success": True,
-        "message": "Phase 3 participation recorded.",
-        "points": points
+        "phase3_completed": True,
+        "phase1_completed": session.get('phase1_completed', False),
+        "phase2_completed": session.get('phase2_completed', False)
     })
 
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    p2_completed = session.get('phase2_completed', False)
+    
+    if not p2_completed and session.get('phase2_started_at'):
+        active, _ = check_phase2_timer()
+        if not active: p2_completed = True
+        
+    return jsonify({
+        "phase1_completed": session.get('phase1_completed', False),
+        "phase2_completed": p2_completed,
+        "phase3_completed": session.get('phase3_completed', False),
+        "phase1_score": session.get('phase1_score', 0),
+        "phase2_score": session.get('phase2_score', 0),
+        "phase3_score": session.get('phase3_score', 0)
+    })
+    
 @app.route('/api/get-total-score', methods=['GET'])
 def get_total_score():
-    phase1_score = session.get('phase1_score', 0)
-    phase2_score = session.get('phase2_score', 0)
-    phase3_score = session.get('phase3_score', 0)
-    
-    phase1_max = session.get('phase1_max_score', 50)
-    phase2_max = 100 
-    phase3_max = session.get('phase3_max_score', 100)
-    
-    phase3_started = session.get('phase3_started', False)
-    
-    total_score = phase1_score + phase2_score + (phase3_score if phase3_started else 0)
-    total_max = phase1_max + phase2_max + (phase3_max if phase3_started else 0)
-    
+    # Helper to return formatted scores
+    p1 = session.get('phase1_score', 0)
+    p2 = session.get('phase2_score', 0)
+    p3 = session.get('phase3_score', 0)
+    total = p1 + p2 + p3
     return jsonify({
-        "phase1_score": phase1_score,
-        "phase1_max": phase1_max,
-        "phase2_score": phase2_score,
-        "phase2_max": phase2_max,
-        "phase3_score": phase3_score,
-        "phase3_max": phase3_max,
-        "phase3_started": phase3_started,
-        "total_score": total_score,
-        "total_max": total_max,
-        "percentage": round((total_score / total_max * 100) if total_max > 0 else 0, 2)
+        "phase1_score": p1,
+        "phase2_score": p2,
+        "phase3_score": p3,
+        "total_score": total
     })
-
-@app.route('/api/admin/export', methods=['GET'])
-def export_data():
-
-    try:
-        if not supabase:
-             return "Supabase not configured", 500
-
-        # Fetch all scores from Supabase
-        response = supabase.table('participants').select("*").execute()
-        participants = response.data
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['Name', 'Email', 'Phase 1 Score', 'Phase 2 Score', 'Phase 3 Score', 'Total Score', 'Created At'])
-
-        for p in participants:
-            writer.writerow([
-                p.get('name', ''),
-                p.get('email', ''),
-                p.get('phase1_score', 0),
-                p.get('phase2_score', 0),
-                p.get('phase3_score', 0),
-                p.get('total_score', 0),
-                p.get('created_at', '')
-            ])
-
-        output.seek(0)
-        return Response(
-            output.getvalue(),
-            mimetype="text/csv",
-            headers={"Content-disposition": "attachment; filename=participants_scores.csv"}
-        )
-    except Exception as e:
-        return str(e), 500
-
-@app.route('/api/debug/scores', methods=['GET'])
-def debug_scores():
-
-    try:
-        if not supabase:
-             return jsonify({"error": "Supabase not configured"})
-
-        # Fetch top scores
-        response = supabase.table('participants').select("*").order('total_score', desc=True).execute()
-        return jsonify(response.data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/reset', methods=['POST'])
-def reset_progress():
-    session.clear()
-    return jsonify({"success": True, "message": "Timeline Reset."})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
