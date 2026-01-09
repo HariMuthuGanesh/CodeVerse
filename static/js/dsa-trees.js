@@ -204,11 +204,63 @@ function convertSlotsToTree(prefix, count) {
     return nodes[1];
 }
 
+// 3. TRAVERSAL VALIDATOR
+function validateTraversal(attempts) {
+    // Reference Tree (Inorder):
+    // Tree: 
+    //      50
+    //    /    \
+    //   30    70
+    //  /  \  /  \
+    // 20 40 60  80
+    //
+    // Inorder: Left, Root, Right
+    // 20, 30, 40, 50, 60, 70, 80
+    const correctOrder = [20, 30, 40, 50, 60, 70, 80];
+
+    // attempts is array of values from slot 1 to 7
+    if (!attempts || attempts.length !== 7) return { valid: false, error: "Incomplete sequence." };
+
+    for (let i = 0; i < 7; i++) {
+        if (attempts[i] !== correctOrder[i]) {
+            return { valid: false, error: `Incorrect sequence at position ${i + 1}.` };
+        }
+    }
+    return { valid: true };
+}
+
+// 4. LOCAL BST CHECK (For Real-time Shake)
+function checkLocalBST(slotIndex, value, currentSlots) {
+    // Returns true if valid placement LOCALLY (parent check only)
+    // currentSlots is map {slotIndex: value}
+
+    // Root (1) always valid locally
+    if (slotIndex === 1) return true;
+
+    const parent = Math.floor(slotIndex / 2);
+    const parentVal = currentSlots[parent];
+
+    if (!parentVal) return true; // Parent not present yet, assume valid for now? Or strict?
+    // Let's be strict: if parent exists, check.
+
+    const isLeft = (slotIndex % 2 === 0);
+
+    if (isLeft) {
+        if (value >= parentVal) return false; // Must be < Parent
+    } else {
+        if (value <= parentVal) return false; // Must be > Parent
+    }
+
+    return true;
+}
+
 // Export
 if (typeof window !== 'undefined') {
     window.DSATree = {
         TreeNode,
         validateBSTFromUI,
-        validateRBFromUI
+        validateRBFromUI,
+        validateTraversal,
+        checkLocalBST
     };
 }

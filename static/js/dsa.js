@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initPhase2();
     initDragAndDrop();
     initRBColorDragDrop();
+    initTraversal();
 });
 
 async function initPhase2() {
@@ -29,12 +30,13 @@ async function initPhase2() {
             restoreStates(
                 data.state.bst_state,
                 data.state.rb_state,
-                data.state.detective_state
+                data.state.detective_state,
+                data.state.traversal_state
             );
 
             // Restore Scores
             const scores = data.state;
-            const total = (scores.bst_score || 0) + (scores.rb_score || 0) + (scores.detective_score || 0);
+            const total = (scores.bst_score || 0) + (scores.rb_score || 0) + (scores.detective_score || 0) + (scores.traversal_score || 0);
             updateScoreDisplay(total);
         }
 
@@ -74,11 +76,13 @@ async function saveState() {
     const bstState = captureBoardState('bst');
     const rbState = captureBoardState('rb');
     const detectiveState = captureBoardState('detective');
+    const traversalState = captureBoardState('traversal');
 
     const statePayload = {
         bst_state: bstState,
         rb_state: rbState,
         detective_state: detectiveState,
+        traversal_state: traversalState,
     };
 
     const payload = {
@@ -116,9 +120,12 @@ function captureBoardState(prefix) {
         return state;
     }
 
-    // Check Slots (BST / Detective)
-    for (let i = 1; i <= 7; i++) {
-        const slot = document.getElementById(`${prefix}-slot-${i}`);
+    // Check Slots (BST / Detective / Traversal)
+    let limit = 7;
+    // Traversal strip also has 7 slots
+
+    for (let i = 1; i <= limit; i++) {
+        const slot = document.getElementById(prefix === 'traversal' ? `t-slot-${i}` : `${prefix}-slot-${i}`);
         if (slot && slot.children.length > 0) {
             const el = slot.children[0];
             state.push({
@@ -141,6 +148,10 @@ function restoreStates(bstState, rbState, detectiveState) {
     } else {
         initBrokenTree();
     }
+
+    if (traversalState && traversalState.length > 0) {
+        restoreBoard('traversal', traversalState);
+    }
 }
 
 function restoreBoard(prefix, state) {
@@ -156,12 +167,12 @@ function restoreBoard(prefix, state) {
 
     // Clear slots first
     for (let i = 1; i <= 7; i++) {
-        const slot = document.getElementById(`${prefix}-slot-${i}`);
+        const slot = document.getElementById(prefix === 'traversal' ? `t-slot-${i}` : `${prefix}-slot-${i}`);
         if (slot) slot.innerHTML = '';
     }
 
     state.forEach(item => {
-        const slot = document.getElementById(`${prefix}-slot-${item.slot}`);
+        const slot = document.getElementById(prefix === 'traversal' ? `t-slot-${item.slot}` : `${prefix}-slot-${item.slot}`);
         let draggable = document.getElementById(item.id);
 
         // If not found (Detective generated items), we might need to recreate or find in bank
@@ -222,6 +233,27 @@ function initDragAndDrop() {
             if (!draggingItem) return;
 
             if (zone.classList.contains('dropzone')) {
+                // REAL-TIME VALIDATION (Shake)
+                if (zone.id.includes('bst-slot')) {
+                    // Check local BST constraint
+                    const slotIdx = parseInt(zone.dataset.index);
+                    const val = parseInt(draggingItem.dataset.value);
+
+                    // Build temporary map of current slots + this new one
+                    const currentSlots = {};
+                    document.querySelectorAll('[id^="bst-slot-"]').forEach(s => {
+                        if (s.children.length > 0) {
+                            currentSlots[parseInt(s.dataset.index)] = parseInt(s.children[0].dataset.value);
+                        }
+                    });
+
+                    if (!window.DSATree.checkLocalBST(slotIdx, val, currentSlots)) {
+                        // INVALID PLACEMENT -> SHAKE
+                        triggerShake(zone);
+                        return; // Reject drop
+                    }
+                }
+
                 if (zone.children.length === 0) {
                     zone.appendChild(draggingItem);
                 } else {
@@ -231,10 +263,13 @@ function initDragAndDrop() {
                     zone.appendChild(draggingItem);
                     originalParent.appendChild(existing);
                 }
+
+                // Success Animation check? Maybe only full validation
             } else if (zone.classList.contains('bank-container')) {
                 // Check correct bank
                 if ((zone.id === 'bst-bank' && draggingItem.closest('#challenge-bst')) ||
-                    (zone.id === 'detective-bank' && draggingItem.closest('#challenge-detective'))) {
+                    (zone.id === 'detective-bank' && draggingItem.closest('#challenge-detective')) ||
+                    (zone.id === 'traversal-bank' && draggingItem.closest('#challenge-traversal'))) {
                     zone.appendChild(draggingItem);
                 }
             }
@@ -260,6 +295,12 @@ async function validateDetective() {
     displayResult("Verifying...", "Analyzing Anomalies...", true);
     document.getElementById('action-area').innerHTML = '';
     await helpers.submitDetective();
+}
+
+async function validateTraversal() {
+    displayResult("Verifying...", "Checking Sequence...", true);
+    document.getElementById('action-area').innerHTML = '';
+    await helpers.submitTraversal();
 }
 
 async function validateRB() {
@@ -297,12 +338,12 @@ function closeConfirm() {
 
 async function confirmExit() {
     await saveState(); // Final State Save
-    
+
     // CRITICAL: Get phase completion status from API response (DB-driven)
     try {
         const res = await fetch('/api/phase2/exit', { method: 'POST' });
         const data = await res.json();
-        
+
         if (data.success) {
             // Phase 3 is now unlocked - this comes from Supabase, not localStorage
             console.log('[PHASE2] Phase 2 completed, Phase 3 unlocked from DB:', {
@@ -319,7 +360,7 @@ async function confirmExit() {
         alert('Error completing Phase 2. Please try again.');
         return;
     }
-    
+
     window.location.href = 'phases.html';
 }
 
@@ -415,10 +456,58 @@ const helpers = {
         });
         const d = await res.json();
 
+        if (d.valid) triggerSuccess('challenge-rb');
         displayResult(d.valid ? "Stable!" : "Unstable", d.message, d.valid);
+        requestAutoSave();
+    },
+
+    submitTraversal: async () => {
+        const slots = {};
+        for (let i = 1; i <= 7; i++) {
+            const slot = document.getElementById(`t-slot-${i}`);
+            // Check order 1-7
+            if (slot && slot.children.length > 0) {
+                slots[i] = parseInt(slot.children[0].dataset.value);
+            }
+        }
+
+        // Convert to array 0-6
+        const attempts = [];
+        for (let i = 1; i <= 7; i++) attempts.push(slots[i] || 0); // 0 if empty
+
+        const valid = window.DSATree.validateTraversal(attempts).valid;
+
+        // Post to server for scoring/persistence logic if needed, or just keep local? 
+        // Plan said /api/traversal/submit
+
+        const res = await fetch('/api/traversal/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slots: slots })
+        });
+        const d = await res.json();
+
+        if (d.valid) triggerSuccess('challenge-traversal');
+        displayResult(d.valid ? "Perfect Sequence!" : "Incorrect Order", d.message, d.valid);
         requestAutoSave();
     }
 };
+
+function triggerShake(element) {
+    element.classList.add('shake-anim');
+    setTimeout(() => {
+        element.classList.remove('shake-anim');
+    }, 500);
+}
+
+function triggerSuccess(containerId) {
+    const el = document.getElementById(containerId);
+    if (el) {
+        el.classList.add('success-anim');
+        setTimeout(() => el.classList.remove('success-anim'), 1000);
+        // Maybe confetti?
+    }
+}
 
 function showChallenge(type) {
     document.querySelectorAll('.challenge-tab').forEach(t => t.classList.remove('active'));
@@ -472,32 +561,32 @@ function initBrokenTree() {
 function initRBColorDragDrop() {
     const colorBank = document.querySelectorAll('#challenge-rb .bank-container .draggable[data-color]');
     const rbNodes = document.querySelectorAll('.rb-node.dropzone');
-    
+
     colorBank.forEach(colorEl => {
         colorEl.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text/plain', e.target.dataset.color);
             e.target.style.opacity = '0.5';
         });
-        
+
         colorEl.addEventListener('dragend', (e) => {
             e.target.style.opacity = '1';
         });
     });
-    
+
     rbNodes.forEach(node => {
         node.addEventListener('dragover', (e) => {
             e.preventDefault();
             node.style.border = '2px dashed var(--accent-avengers)';
         });
-        
+
         node.addEventListener('dragleave', (e) => {
             node.style.border = '';
         });
-        
+
         node.addEventListener('drop', (e) => {
             e.preventDefault();
             const color = e.dataTransfer.getData('text/plain');
-            
+
             if (color === 'black') {
                 node.style.backgroundColor = 'black';
                 node.dataset.color = 'black';
@@ -505,9 +594,13 @@ function initRBColorDragDrop() {
                 node.style.backgroundColor = '#AA0000';
                 node.dataset.color = 'red';
             }
-            
+
             node.style.border = '';
             requestAutoSave();
         });
     });
+}
+function initTraversal() {
+    // Nothing specific needed beyond drag and drop init
+    // maybe verify bank population?
 }

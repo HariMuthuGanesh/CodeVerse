@@ -355,6 +355,7 @@ def sync_phase2():
         session['bst_score'] = 0
         session['rb_score'] = 0
         session['detective_score'] = 0
+        session['traversal_score'] = 0
     
     # Update Session State and save to DB
     client_state = request.json.get('state') if request.json else None
@@ -575,6 +576,52 @@ def complete_rb():
 
     return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
+@app.route('/api/traversal/submit', methods=['POST'])
+def submit_traversal():
+    # No timer check
+    if session.get('phase2_completed'):
+        return jsonify({"success": False, "message": "Phase 2 already completed"})
+    
+    data = request.json
+    slots = data.get('slots', {}) # Map slot_index -> value
+    
+    # Correct Inorder: 20, 30, 40, 50, 60, 70, 80
+    correct_order = [20, 30, 40, 50, 60, 70, 80]
+    
+    attempts = []
+    # Fill attempts 1-7
+    try:
+        for i in range(1, 8):
+            val = slots.get(str(i))
+            if val is not None:
+                attempts.append(int(val))
+            else:
+                attempts.append(None)
+    except:
+        return jsonify({"success": False, "valid": False, "message": "Invalid Data"})
+
+    valid = True
+    msg = "Valid Sequence"
+    
+    if len(attempts) != 7 or any(x is None for x in attempts):
+        valid = False
+        msg = "Incomplete sequence"
+    else:
+        for i in range(7):
+            if attempts[i] != correct_order[i]:
+                valid = False
+                msg = f"Incorrect at position {i+1}"
+                break
+    
+    points = 20 if valid else 0
+    session['traversal_score'] = points
+    
+    state = session.get('phase2_state', {})
+    state['traversal_score'] = points
+    session['phase2_state'] = state
+    
+    return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
+
 @app.route('/api/phase2/exit', methods=['POST'])
 def exit_phase2():
     email = session.get('user_email')
@@ -583,7 +630,9 @@ def exit_phase2():
         return jsonify({"success": False, "error": "Authentication required"}), 401
     
     # COMPLETE PHASE 2 - Calculate score from state
-    p2_score = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0)
+    # BST=40, RB=40, Detective=20, Traversal=20 (Total 120, capped or scaled?)
+    # Let's keep it simple: just sum them. 
+    p2_score = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0) + session.get('traversal_score', 0)
     session['phase2_score'] = p2_score
     session['phase2_completed'] = True
     
