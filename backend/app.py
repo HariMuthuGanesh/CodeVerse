@@ -251,7 +251,7 @@ def api_login():
 def get_quiz():
     import random
     # Randomly select ONLY 5 questions from pool of 10
-    selected = random.sample(QUIZ_QUESTIONS, min(5, len(QUIZ_QUESTIONS)))
+    selected = random.sample(QUIZ_QUESTIONS, min(10, len(QUIZ_QUESTIONS)))
     app.logger.info(f"[PHASE1] Total questions in pool: {len(QUIZ_QUESTIONS)}, Returning {len(selected)} questions (randomized)")
     
     result = [
@@ -273,12 +273,12 @@ def submit_quiz():
     answers = data.get('answers', {})
     score = 0
     
-    # Each question = 5 marks, max 5 questions = 25 marks total
+    # Each question = 5 marks, max 10 questions = 50 marks total
     for q in QUIZ_QUESTIONS:
         if answers.get(str(q['id'])) == q['answer']:
             score += 5
     
-    app.logger.info(f"[PHASE1] Submission for email={email}, score={score} out of 25")
+    app.logger.info(f"[PHASE1] Submission for email={email}, score={score} out of 50")
     
     session['phase1_score'] = score
     session['phase1_completed'] = True
@@ -465,18 +465,23 @@ def submit_bst():
     if session.get('phase2_completed'):
         return jsonify({"success": False, "message": "Phase 2 already completed"})
     
+    email = session.get('user_email')
     data = request.json
     slots = data.get('slots', {}) # Map of slot_index -> value
     
     valid, msg = validate_bst_logic(slots)
     
-    points = 40 if valid else 0
+    points = 25 if valid else 0
     session['bst_score'] = points
     
     # Store points in state for persistence
     state = session.get('phase2_state', {})
     state['bst_score'] = points
     session['phase2_state'] = state
+    
+    # FORCE SAVE to DB
+    if email:
+        db_update_participant(email, {"phase2_state": state})
     
     return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
@@ -547,18 +552,23 @@ def submit_detective():
     if session.get('phase2_completed'):
         return jsonify({"success": False, "message": "Phase 2 already completed"})
     
+    email = session.get('user_email')
     data = request.json
     slots = data.get('slots', {})
     
     valid, msg, violations = validate_detective_logic(slots)
     
-    # Score based on violations detected (20 points if all violations found)
-    points = 20 if valid else 0
+    # Score based on violations detected (25 points if all violations found)
+    points = 25 if valid else 0
     session['detective_score'] = points
     
     state = session.get('phase2_state', {})
     state['detective_score'] = points
     session['phase2_state'] = state
+
+    # FORCE SAVE to DB
+    if email:
+        db_update_participant(email, {"phase2_state": state})
 
     app.logger.info(f"[PHASE2 DETECTIVE] Violations detected: {violations}, Valid: {valid}, Score: {points}")
     
@@ -570,17 +580,22 @@ def complete_rb():
     if session.get('phase2_completed'):
         return jsonify({"success": False, "message": "Phase 2 already completed"})
     
+    email = session.get('user_email')
     data = request.json
     nodes = data.get('nodes', [])
     
     valid, msg = validate_rb_logic(nodes)
     
-    points = 40 if valid else 0
+    points = 25 if valid else 0
     session['rb_score'] = points
     
     state = session.get('phase2_state', {})
     state['rb_score'] = points
     session['phase2_state'] = state
+
+    # FORCE SAVE to DB
+    if email:
+        db_update_participant(email, {"phase2_state": state})
 
     return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
@@ -590,6 +605,7 @@ def submit_traversal():
     if session.get('phase2_completed'):
         return jsonify({"success": False, "message": "Phase 2 already completed"})
     
+    email = session.get('user_email')
     data = request.json
     slots = data.get('slots', {}) # Map slot_index -> value
     
@@ -621,12 +637,16 @@ def submit_traversal():
                 msg = f"Incorrect at position {i+1}"
                 break
     
-    points = 20 if valid else 0
+    points = 25 if valid else 0
     session['traversal_score'] = points
     
     state = session.get('phase2_state', {})
     state['traversal_score'] = points
     session['phase2_state'] = state
+
+    # FORCE SAVE to DB
+    if email:
+        db_update_participant(email, {"phase2_state": state})
     
     return jsonify({"success": True, "valid": valid, "message": msg, "score": points})
 
@@ -638,9 +658,10 @@ def exit_phase2():
         return jsonify({"success": False, "error": "Authentication required"}), 401
     
     # COMPLETE PHASE 2 - Calculate score from state
-    # BST=40, RB=40, Detective=20, Traversal=20 (Total 120, capped or scaled?)
-    # Let's keep it simple: just sum them. 
-    p2_score = session.get('bst_score', 0) + session.get('rb_score', 0) + session.get('detective_score', 0) + session.get('traversal_score', 0)
+    # BST=25, RB=25, Detective=25, Traversal=25 (Total 100)
+    # Use phase2_state for reliability
+    state = session.get('phase2_state', {})
+    p2_score = state.get('bst_score', 0) + state.get('rb_score', 0) + state.get('detective_score', 0) + state.get('traversal_score', 0)
     session['phase2_score'] = p2_score
     session['phase2_completed'] = True
     
