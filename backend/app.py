@@ -189,6 +189,9 @@ def api_login():
         app.logger.warning(f"[LOGIN] Missing fields - email: {bool(email)}, username: {bool(username)}")
         return jsonify({"error": "Missing fields"}), 400
 
+    # Clear previous session to prevent leakage
+    session.clear()
+
     session.permanent = True
     session['user_email'] = email
     session['user_name'] = username
@@ -339,6 +342,11 @@ def sync_phase2():
             
             if db_state:
                 session['phase2_state'] = db_state
+                # Restore scores from state to session for backend logic
+                session['bst_score'] = db_state.get('bst_score', 0)
+                session['rb_score'] = db_state.get('rb_score', 0)
+                session['detective_score'] = db_state.get('detective_score', 0)
+                session['traversal_score'] = db_state.get('traversal_score', 0)
             
             if db_completed:
                 session['phase2_completed'] = True
