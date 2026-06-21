@@ -2,4 +2,4 @@ flask
 flask-session
 flask-cors
 gunicorn
-supabase
+psycopg2-binary

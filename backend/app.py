@@ -1,11 +1,12 @@
 from flask import Flask, jsonify, request, session, render_template, send_from_directory, Response, redirect
 from flask_cors import CORS
-from supabase import create_client, Client
 from quiz_data import QUIZ_QUESTIONS
 import os
 import io
 import csv
 import json
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timedelta
 
 # Initialize Flask App
@@ -19,19 +20,19 @@ app.secret_key = os.environ.get('SECRET_KEY', 'AVENGERS_ASSEMBLE_SECRET_KEY')
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=2) # Keep session alive
 CORS(app)
 
-# Supabase Configuration - MANDATORY: Use service_role key only
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY')
+# Neon PostgreSQL Configuration
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-supabase: Client = None
-if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-        app.logger.info(f"[SUPABASE] Initialized successfully with URL: {SUPABASE_URL}")
-    except Exception as e:
-        app.logger.error(f"[SUPABASE INIT ERROR] {str(e)}")
+def get_db():
+    """Get a new DB connection for each request."""
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL not configured")
+    return psycopg2.connect(DATABASE_URL)
+
+if DATABASE_URL:
+    app.logger.info("[DB] Neon PostgreSQL configured successfully")
 else:
-    app.logger.warning(f"[SUPABASE] Missing configuration - URL: {bool(SUPABASE_URL)}, KEY: {bool(SUPABASE_SERVICE_KEY)}")
+    app.logger.warning("[DB] DATABASE_URL not set — database will not work")
 
 # Routes
 @app.route('/')
@@ -77,6 +78,14 @@ def static_files(filename):
 def get_utc_now_iso():
     return datetime.utcnow().isoformat()
 
+def db_fetch_one(query, params):
+    """Helper: fetch a single row as a dict."""
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(query, params)
+            row = cur.fetchone()
+            return dict(row) if row else None
+
 def db_upsert_participant(email, name):
     """
     UPSERT for login only - Always sets email + name, never null name.
@@ -84,61 +93,42 @@ def db_upsert_participant(email, name):
     Initializes scores as NULL for new participants only.
     Returns (success: bool, error: str or None)
     """
-    if not supabase:
-        app.logger.error(f"[DB WRITE] Supabase client not initialized")
-        return False, "Supabase not initialized"
-    
     try:
         # CRITICAL: Never allow null name
         if not name or name.strip() == "":
             app.logger.error(f"[DB WRITE] Attempted to upsert with null/empty name for email={email}")
             return False, "Name cannot be null or empty"
-        
-        # Check if participant exists first
-        check_res = supabase.table('participants').select('email, name').eq('email', email).execute()
-        existing_name = None
-        if check_res.data and len(check_res.data) > 0:
-            existing_name = check_res.data[0].get('name')
-        
-        payload = {
-            "email": email,
-            "updated_at": get_utc_now_iso()
-        }
-        
-        # CRITICAL: Never overwrite name with null - preserve existing or use new
-        if existing_name and existing_name.strip():
-            # Participant exists with name - preserve it
-            payload["name"] = existing_name.strip()
-            app.logger.info(f"[DB WRITE] Preserving existing name for email={email}: {existing_name}")
-        else:
-            # New participant or name is null - set new name
-            payload["name"] = name.strip()
-            app.logger.info(f"[DB WRITE] Setting new name for email={email}: {name}")
-        
-        # Only initialize scores as NULL if this is a new participant
-        if not check_res.data or len(check_res.data) == 0:
-            # New participant - initialize scores as NULL
-            payload["phase1_score"] = None
-            payload["phase2_score"] = None
-            payload["phase3_score"] = None
-            payload["total_score"] = None
-            app.logger.info(f"[DB WRITE] Initializing scores as NULL for new participant")
-        
-        app.logger.info(f"[DB WRITE] Attempting upsert for email={email}, payload={payload}")
-        
-        res = supabase.table('participants').upsert(payload, on_conflict='email').execute()
-        
-        # CRITICAL: Verify write success
-        if res.data is None or (isinstance(res.data, list) and len(res.data) == 0):
-            error_msg = f"Supabase returned no data. Error: {getattr(res, 'error', 'Unknown')}"
-            app.logger.error(f"[DB ERROR] {error_msg}")
-            return False, error_msg
-        
-        app.logger.info(f"[DB SUCCESS] Upsert successful for email={email}, returned {len(res.data) if isinstance(res.data, list) else 1} row(s)")
+
+        with get_db() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                # Check if participant exists
+                cur.execute("SELECT email, name FROM participants WHERE email = %s", (email,))
+                existing = cur.fetchone()
+                existing_name = existing['name'] if existing else None
+
+                # Preserve name if already set
+                final_name = (existing_name.strip() if existing_name and existing_name.strip() else name.strip())
+
+                if existing:
+                    app.logger.info(f"[DB WRITE] Preserving existing name for email={email}: {final_name}")
+                    cur.execute(
+                        "UPDATE participants SET name=%s, updated_at=NOW() WHERE email=%s",
+                        (final_name, email)
+                    )
+                else:
+                    app.logger.info(f"[DB WRITE] Inserting new participant email={email}, name={final_name}")
+                    cur.execute(
+                        """INSERT INTO participants (email, name, phase1_score, phase2_score, phase3_score, total_score, updated_at)
+                           VALUES (%s, %s, NULL, NULL, NULL, NULL, NOW())""",
+                        (email, final_name)
+                    )
+                conn.commit()
+
+        app.logger.info(f"[DB SUCCESS] Upsert successful for email={email}")
         return True, None
-        
+
     except Exception as e:
-        error_msg = f"Supabase Upsert Failed: {str(e)}"
+        error_msg = f"DB Upsert Failed: {str(e)}"
         app.logger.error(f"[DB ERROR] {error_msg}")
         return False, error_msg
 
@@ -147,29 +137,32 @@ def db_update_participant(email, data):
     UPDATE for phase submissions - NEVER use upsert after login.
     Returns (success: bool, error: str or None)
     """
-    if not supabase:
-        app.logger.error(f"[DB WRITE] Supabase client not initialized")
-        return False, "Supabase not initialized"
-    
     try:
         payload = data.copy()
-        payload["updated_at"] = get_utc_now_iso()
-        
-        app.logger.info(f"[DB WRITE] Attempting update for email={email}, payload={payload}")
-        
-        res = supabase.table('participants').update(payload).eq('email', email).execute()
-        
-        # CRITICAL: Verify write success
-        if res.data is None or (isinstance(res.data, list) and len(res.data) == 0):
-            error_msg = f"Supabase returned no data. Error: {getattr(res, 'error', 'Unknown')}"
-            app.logger.error(f"[DB ERROR] {error_msg}")
-            return False, error_msg
-        
-        app.logger.info(f"[DB SUCCESS] Update successful for email={email}, returned {len(res.data) if isinstance(res.data, list) else 1} row(s)")
+        payload["updated_at"] = datetime.utcnow()
+
+        # Build SET clause dynamically from payload keys
+        set_clause = ", ".join(f"{k} = %s" for k in payload.keys())
+        values = list(payload.values()) + [email]
+
+        app.logger.info(f"[DB WRITE] Attempting update for email={email}, fields={list(payload.keys())}")
+
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE participants SET {set_clause} WHERE email = %s",
+                    values
+                )
+                if cur.rowcount == 0:
+                    app.logger.error(f"[DB ERROR] No rows updated for email={email}")
+                    return False, "No rows updated"
+                conn.commit()
+
+        app.logger.info(f"[DB SUCCESS] Update successful for email={email}")
         return True, None
-        
+
     except Exception as e:
-        error_msg = f"Supabase Update Failed: {str(e)}"
+        error_msg = f"DB Update Failed: {str(e)}"
         app.logger.error(f"[DB ERROR] {error_msg}")
         return False, error_msg
 
@@ -213,26 +206,24 @@ def api_login():
     phase3_completed = False
     
     try:
-        if supabase:
-            res = supabase.table('participants').select('*').eq('email', email).execute()
-            if res.data and len(res.data) > 0:
-                row = res.data[0]
-                session['phase1_score'] = row.get('phase1_score') or 0
-                session['phase2_score'] = row.get('phase2_score') or 0
-                session['phase3_score'] = row.get('phase3_score') or 0
-                
-                # Derive phase completion from DB only (IS NOT NULL means completed)
-                phase1_completed = row.get('phase1_score') is not None
-                phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
-                phase3_completed = row.get('phase3_score') is not None
-                
-                session['phase1_completed'] = phase1_completed
-                session['phase2_completed'] = phase2_completed
-                session['phase3_completed'] = phase3_completed
-                
-                app.logger.info(f"[LOGIN] Loaded participant - Phase1: {phase1_completed}, Phase2: {phase2_completed}, Phase3: {phase3_completed}")
-            else:
-                app.logger.warning(f"[LOGIN] No participant row found after upsert for email={email}")
+        row = db_fetch_one("SELECT * FROM participants WHERE email = %s", (email,))
+        if row:
+            session['phase1_score'] = row.get('phase1_score') or 0
+            session['phase2_score'] = row.get('phase2_score') or 0
+            session['phase3_score'] = row.get('phase3_score') or 0
+
+            # Derive phase completion from DB only (IS NOT NULL means completed)
+            phase1_completed = row.get('phase1_score') is not None
+            phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
+            phase3_completed = row.get('phase3_score') is not None
+
+            session['phase1_completed'] = phase1_completed
+            session['phase2_completed'] = phase2_completed
+            session['phase3_completed'] = phase3_completed
+
+            app.logger.info(f"[LOGIN] Loaded participant - Phase1: {phase1_completed}, Phase2: {phase2_completed}, Phase3: {phase3_completed}")
+        else:
+            app.logger.warning(f"[LOGIN] No participant row found after upsert for email={email}")
     except Exception as e:
         app.logger.error(f"[LOGIN] Error fetching participant: {str(e)}")
         return jsonify({"success": False, "error": f"Failed to fetch participant data: {str(e)}"}), 500
@@ -286,12 +277,9 @@ def submit_quiz():
     # COMPLETE PHASE 1 - Use UPDATE (never upsert after login)
     # Fetch current scores from DB to calculate total
     try:
-        res = supabase.table('participants').select('phase2_score, phase3_score').eq('email', email).execute()
-        phase2_score = 0
-        phase3_score = 0
-        if res.data and len(res.data) > 0:
-            phase2_score = res.data[0].get('phase2_score') or 0
-            phase3_score = res.data[0].get('phase3_score') or 0
+        row = db_fetch_one("SELECT phase2_score, phase3_score FROM participants WHERE email = %s", (email,))
+        phase2_score = (row.get('phase2_score') or 0) if row else 0
+        phase3_score = (row.get('phase3_score') or 0) if row else 0
     except Exception as e:
         app.logger.warning(f"[PHASE1] Could not fetch existing scores: {str(e)}")
         phase2_score = 0
@@ -334,27 +322,21 @@ def sync_phase2():
     
     # Fetch from DB first to restore state
     try:
-        res = supabase.table('participants').select('phase2_state, phase2_completed').eq('email', email).execute()
-        if res.data and len(res.data) > 0:
-            row = res.data[0]
+        row = db_fetch_one("SELECT phase2_state, phase2_completed FROM participants WHERE email = %s", (email,))
+        if row:
             db_state = row.get('phase2_state') or {}
             db_completed = row.get('phase2_completed', False)
-            
+
             if db_state:
                 session['phase2_state'] = db_state
-                # Restore scores from state to session for backend logic
                 session['bst_score'] = db_state.get('bst_score', 0)
                 session['rb_score'] = db_state.get('rb_score', 0)
                 session['detective_score'] = db_state.get('detective_score', 0)
                 session['traversal_score'] = db_state.get('traversal_score', 0)
-            
+
             if db_completed:
                 session['phase2_completed'] = True
-                return jsonify({
-                    "success": True,
-                    "completed": True,
-                    "state": db_state
-                })
+                return jsonify({"success": True, "completed": True, "state": db_state})
     except Exception as e:
         app.logger.warning(f"[PHASE2 SYNC] Error fetching from DB: {str(e)}")
     
@@ -669,12 +651,9 @@ def exit_phase2():
     
     # Fetch current scores from DB to calculate total
     try:
-        res = supabase.table('participants').select('phase1_score, phase3_score').eq('email', email).execute()
-        phase1_score = 0
-        phase3_score = 0
-        if res.data and len(res.data) > 0:
-            phase1_score = res.data[0].get('phase1_score') or 0
-            phase3_score = res.data[0].get('phase3_score') or 0
+        row = db_fetch_one("SELECT phase1_score, phase3_score FROM participants WHERE email = %s", (email,))
+        phase1_score = (row.get('phase1_score') or 0) if row else 0
+        phase3_score = (row.get('phase3_score') or 0) if row else 0
     except Exception as e:
         app.logger.warning(f"[PHASE2] Could not fetch existing scores: {str(e)}")
         phase1_score = 0
@@ -727,12 +706,9 @@ def complete_phase_3():
     
     # Fetch current scores from DB to calculate total
     try:
-        res = supabase.table('participants').select('phase1_score, phase2_score').eq('email', email).execute()
-        phase1_score = 0
-        phase2_score = 0
-        if res.data and len(res.data) > 0:
-            phase1_score = res.data[0].get('phase1_score') or 0
-            phase2_score = res.data[0].get('phase2_score') or 0
+        row = db_fetch_one("SELECT phase1_score, phase2_score FROM participants WHERE email = %s", (email,))
+        phase1_score = (row.get('phase1_score') or 0) if row else 0
+        phase2_score = (row.get('phase2_score') or 0) if row else 0
     except Exception as e:
         app.logger.warning(f"[PHASE3] Could not fetch existing scores: {str(e)}")
         phase1_score = 0
@@ -763,7 +739,7 @@ def complete_phase_3():
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """
-    Get phase status from Supabase (source of truth).
+    Get phase status from DB (source of truth).
     Derive phase completion from DB scores.
     """
     email = session.get('user_email')
@@ -776,41 +752,39 @@ def get_status():
             "phase2_score": 0,
             "phase3_score": 0
         })
-    
-    # Fetch from Supabase - DB is source of truth
+
+    # Fetch from DB - DB is source of truth
     phase1_completed = False
     phase2_completed = False
     phase3_completed = False
     phase1_score = 0
     phase2_score = 0
     phase3_score = 0
-    
+
     try:
-        if supabase:
-            res = supabase.table('participants').select('phase1_score, phase2_score, phase3_score, phase2_completed').eq('email', email).execute()
-            if res.data and len(res.data) > 0:
-                row = res.data[0]
-                phase1_score = row.get('phase1_score') or 0
-                phase2_score = row.get('phase2_score') or 0
-                phase3_score = row.get('phase3_score') or 0
-                
-                # Derive phase completion from DB only (IS NOT NULL means completed)
-                phase1_completed = row.get('phase1_score') is not None
-                phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
-                phase3_completed = row.get('phase3_score') is not None
-                
-                # Update session to keep in sync
-                session['phase1_completed'] = phase1_completed
-                session['phase2_completed'] = phase2_completed
-                session['phase3_completed'] = phase3_completed
-                session['phase1_score'] = phase1_score
-                session['phase2_score'] = phase2_score
-                session['phase3_score'] = phase3_score
-                
-                app.logger.info(f"[STATUS] Fetched from DB - Phase1: {phase1_completed}, Phase2: {phase2_completed} (DB flag: {row.get('phase2_completed')}), Phase3: {phase3_completed}")
+        row = db_fetch_one(
+            "SELECT phase1_score, phase2_score, phase3_score, phase2_completed FROM participants WHERE email = %s",
+            (email,)
+        )
+        if row:
+            phase1_score = row.get('phase1_score') or 0
+            phase2_score = row.get('phase2_score') or 0
+            phase3_score = row.get('phase3_score') or 0
+
+            phase1_completed = row.get('phase1_score') is not None
+            phase2_completed = row.get('phase2_completed', False) or (row.get('phase2_score') is not None)
+            phase3_completed = row.get('phase3_score') is not None
+
+            session['phase1_completed'] = phase1_completed
+            session['phase2_completed'] = phase2_completed
+            session['phase3_completed'] = phase3_completed
+            session['phase1_score'] = phase1_score
+            session['phase2_score'] = phase2_score
+            session['phase3_score'] = phase3_score
+
+            app.logger.info(f"[STATUS] Fetched from DB - Phase1: {phase1_completed}, Phase2: {phase2_completed}, Phase3: {phase3_completed}")
     except Exception as e:
         app.logger.error(f"[STATUS] Error fetching from DB: {str(e)}")
-        # Fallback to session
         phase1_completed = session.get('phase1_completed', False)
         phase2_completed = session.get('phase2_completed', False)
         phase3_completed = session.get('phase3_completed', False)
@@ -830,45 +804,38 @@ def get_status():
 @app.route('/api/get-total-score', methods=['GET'])
 def get_total_score():
     """
-    Get total score from Supabase.
+    Get total score from DB.
     CRITICAL: Only show scores if phase3_score IS NOT NULL.
     """
     email = session.get('user_email')
     if not email:
-        return jsonify({
-            "phase1_score": 0,
-            "phase2_score": 0,
-            "phase3_score": None,
-            "total_score": 0,
-            "scores_visible": False
-        })
-    
-    # Fetch from Supabase - DB is source of truth
+        return jsonify({"phase1_score": 0, "phase2_score": 0, "phase3_score": None, "total_score": 0, "scores_visible": False})
+
+    # Fetch from DB - DB is source of truth
     phase1_score = 0
     phase2_score = 0
     phase3_score = None
     scores_visible = False
-    
+
     try:
-        if supabase:
-            res = supabase.table('participants').select('phase1_score, phase2_score, phase3_score, total_score').eq('email', email).execute()
-            if res.data and len(res.data) > 0:
-                row = res.data[0]
-                phase1_score = row.get('phase1_score') or 0
-                phase2_score = row.get('phase2_score') or 0
-                phase3_score = row.get('phase3_score')
-                total_score = row.get('total_score') or 0
-                
-                # CRITICAL RULE: Scores visible ONLY if phase3_score IS NOT NULL
-                scores_visible = phase3_score is not None
-                
-                # Update session
-                session['phase1_score'] = phase1_score
-                session['phase2_score'] = phase2_score
-                session['phase3_score'] = phase3_score
-                session['phase3_completed'] = (phase3_score is not None)
-                
-                app.logger.info(f"[SCORE] Fetched scores for {email} - Phase3: {phase3_score}, Visible: {scores_visible}")
+        row = db_fetch_one(
+            "SELECT phase1_score, phase2_score, phase3_score, total_score FROM participants WHERE email = %s",
+            (email,)
+        )
+        if row:
+            phase1_score = row.get('phase1_score') or 0
+            phase2_score = row.get('phase2_score') or 0
+            phase3_score = row.get('phase3_score')
+
+            # CRITICAL RULE: Scores visible ONLY if phase3_score IS NOT NULL
+            scores_visible = phase3_score is not None
+
+            session['phase1_score'] = phase1_score
+            session['phase2_score'] = phase2_score
+            session['phase3_score'] = phase3_score
+            session['phase3_completed'] = (phase3_score is not None)
+
+            app.logger.info(f"[SCORE] Fetched scores for {email} - Phase3: {phase3_score}, Visible: {scores_visible}")
     except Exception as e:
         app.logger.error(f"[SCORE] Error fetching scores: {str(e)}")
         phase1_score = session.get('phase1_score', 0)
